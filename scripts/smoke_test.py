@@ -8,7 +8,9 @@ browser stack:
   2. Per-site counts are the paper's 162 / 114 / 79, and `id_map.csv` agrees.
   3. Every condition maps to exactly one set of harness flags.
   4. The shipped JSON schemas parse and accept a transcribed Table 1 row.
-  5. Nothing that must stay local is committed, and no live API key leaked.
+  5. The calibration subset resolves and the anchor does not claim numbers it
+     has not measured.
+  6. Nothing that must stay local is committed, and no live API key leaked.
 
 Run from anywhere:
 
@@ -87,7 +89,41 @@ try:
 except ImportError:
     print("[SKIP] Table 1 fixture not available (tests/ not shipped)")
 
-# ---- 5. nothing private, no leaked key --------------------------------------
+# ---- 5. calibration subset and anchor ---------------------------------------
+from skillshift.calibration import reference as reference_mod  # noqa: E402
+from skillshift.calibration import subset as subset_mod  # noqa: E402
+
+try:
+    calibration_set = subset_mod.load_calibration_set()
+    check(
+        f"calibration subset pins {subset_mod.CALIBRATION_SET_SIZE} resolvable families",
+        len(calibration_set.family_ids) == subset_mod.CALIBRATION_SET_SIZE,
+        f"got {len(calibration_set.family_ids)}",
+    )
+    check(
+        "the subset is exactly what its sampling rule recomputes",
+        calibration_set.family_ids == subset_mod.sample_family_ids(),
+    )
+except Exception as exc:  # noqa: BLE001
+    check("calibration subset loads", False, str(exc))
+
+try:
+    anchor = reference_mod.load_reference_results()
+    unmeasured = any(
+        value.value is None for cell in anchor.cells() for value in cell.metrics.values()
+    )
+    # An anchor that says "published" while carrying nulls, or that carries
+    # numbers while saying "pending", is the one failure mode that would make
+    # `skillshift calibrate` certify a deployment against fiction.
+    check(
+        "the reference anchor's status matches what it actually holds",
+        anchor.is_published != unmeasured,
+        f"status={anchor.status!r}, has unmeasured cells={unmeasured}",
+    )
+except Exception as exc:  # noqa: BLE001
+    check("reference anchor loads", False, str(exc))
+
+# ---- 6. nothing private, no leaked key --------------------------------------
 private = [
     path
     for path in ROOT.rglob("per_task.jsonl")

@@ -5,7 +5,7 @@
     skillshift calibrate                       check your setup against the anchor
     skillshift run --agent --site --condition  run tasks
     skillshift report RUN_DIR --out DIR        aggregate into a submission
-    skillshift validate results.json           the leaderboard checks, locally
+    skillshift validate results.json           the leaderboard checks, locally\n    skillshift leaderboard check DIR           the leaderboard checks, plus the PR preview
 
 `validate` runs exactly the checks the leaderboard CI runs, so a submitter finds
 out before opening a pull request rather than after.
@@ -19,7 +19,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from . import __version__, conditions, paths, sites
+from . import __version__, conditions, environments, paths, sites
 from .errors import SkillShiftError
 
 EXIT_OK = 0
@@ -58,15 +58,7 @@ def _site_urls() -> list[tuple[str, str, str | None]]:
 
 #: (site, version) -> the environment name used by skillshift-envs, which is
 #: also the key under which its image digest is recorded in DIGESTS.json.
-#: WordPress has one deployment for both contexts.
-_ENVIRONMENT_NAMES: dict[tuple[str, str], str] = {
-    ("gitlab", "v1"): "gitlab-v12",
-    ("gitlab", "v2"): "gitlab-v16",
-    ("magento", "v1"): "magento-v19",
-    ("magento", "v2"): "magento-v24",
-    ("wordpress", "v1"): "wordpress",
-    ("wordpress", "v2"): "wordpress",
-}
+_ENVIRONMENT_NAMES = environments.ENVIRONMENT_NAMES
 
 
 def _find_envs_repo() -> Path | None:
@@ -226,23 +218,163 @@ def cmd_env_up(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# running tasks -- shared by `run` and `calibrate`
+
+
+def _echo_record(record) -> None:
+    print(
+        f"  {record.uid:<32} {'PASS' if record.success else 'fail'} "
+        f"steps={record.steps} skills={record.skill_calls}",
+        flush=True,
+    )
+
+
+def _run_pairs(plans, *, factory, max_steps: int, headless: bool) -> tuple:
+    """Execute a list of `(site, condition, task_ids | None)` plans.
+
+    The single execution path behind both `skillshift run` and
+    `skillshift calibrate`: a calibration that ran through a different loop than
+    a real run would not be calibrating the real run.
+    """
+    from .runner import run_condition
+
+    records: list = []
+    for site, condition, task_ids in plans:
+        print(f"running {site} / {condition} ...", flush=True)
+        records.extend(
+            run_condition(
+                site=site,
+                condition=condition,
+                agent_factory=factory,
+                task_uids=list(task_ids) if task_ids else None,
+                max_steps=max_steps,
+                headless=headless,
+                on_record=_echo_record,
+            )
+        )
+    return tuple(records)
+
+
+def _write_records(records, out_dir: Path) -> Path:
+    """Write the per-task records, which never leave this machine."""
+    from . import report as report_mod
+    from .eval.records import write_jsonl
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    per_task = write_jsonl(records, out_dir / report_mod.PER_TASK_FILENAME)
+    print(f"\n{len(records)} task record(s) written to {per_task}")
+    return per_task
+
+
+# --------------------------------------------------------------------------
 # calibrate
+
+CALIBRATION_DEFAULT_OUT = "runs/calibration"
+
+_PENDING_ANCHOR_MESSAGE = """The reference anchor has not been published yet.
+
+  subset:   {subset_path}
+  anchor:   {anchor_path}
+
+The subset pins {n_families} task families; the anchor holds what the built-in no-skill
+reference agent scores on them, which is what lets you tell a misconfigured
+environment from a genuinely weak method. The numbers can only be measured once
+the environment images are tagged, and a placeholder would be indistinguishable
+from a measurement -- so the file ships with every value null and this command
+refuses to certify anything.
+
+Until then, verify your setup with `skillshift env status` and a single task run.
+See data/reference_results/README.md."""
+
+
+def _calibration_plans(calibration_set, site: str | None):
+    """One plan per (site, condition), each pinning that site's family ids."""
+    by_site = calibration_set.by_site()
+    wanted = sites.get(site).name if site else None
+    return [
+        (name, condition, family_ids)
+        for name, family_ids in by_site.items()
+        if wanted is None or name == wanted
+        for condition in conditions.CONDITIONS
+    ]
+
+
+def _print_calibration_plan(plans) -> int:
+    n_runs = sum(len(task_ids) for _, _, task_ids in plans)
+    print(f"{n_runs} run(s): {len(plans)} (site, condition) cell(s) of the calibration subset\n")
+    for site, condition, task_ids in plans:
+        print(f"  {site:<10} {condition:<9} {len(task_ids)} task(s)")
+    print("\nNothing was run: --dry-run.")
+    return EXIT_OK
 
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
-    if not paths.CALIBRATION_SET_PATH.is_file():
+    """Check a local deployment against the published reference anchor.
+
+    Exit codes:
+        0  every gated value is within tolerance of the anchor
+        1  at least one gated value deviates beyond the threshold
+        2  the check could not be made -- no subset, or the anchor is unpublished
+    """
+    from .calibration import deviation as deviation_mod
+    from .calibration import reference as reference_mod
+    from .calibration import subset as subset_mod
+    from .errors import CalibrationError
+    from .eval import metrics as metrics_mod
+
+    try:
+        calibration_set = subset_mod.load_calibration_set()
+    except CalibrationError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    plans = _calibration_plans(calibration_set, args.site)
+    if args.dry_run:
+        return _print_calibration_plan(plans)
+
+    anchor_path = Path(args.reference) if args.reference else reference_mod.default_path()
+    try:
+        anchor = reference_mod.load_reference_results(anchor_path)
+    except CalibrationError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if not anchor.is_published:
         print(
-            "The calibration subset has not been published yet.\n\n"
-            f"  expected: {paths.CALIBRATION_SET_PATH}\n\n"
-            "It pins 30 tasks and the reference agent's scores on them, so that you can\n"
-            "tell a misconfigured environment from a genuinely weak method. Until it\n"
-            "ships, verify your setup with `skillshift env status` and a single task run.",
+            _PENDING_ANCHOR_MESSAGE.format(
+                subset_path=paths.CALIBRATION_SET_PATH,
+                anchor_path=anchor_path,
+                n_families=len(calibration_set.family_ids),
+            ),
             file=sys.stderr,
         )
         return EXIT_USAGE
 
-    print("Calibration runs are wired but the published baseline is still pending.")
-    return EXIT_USAGE
+    from .agents import load_agent_factory
+    from .report import PRIVATE_FILE_NOTICE
+
+    records = _run_pairs(
+        plans,
+        factory=load_agent_factory(args.agent),
+        max_steps=args.max_steps,
+        headless=not args.headed,
+    )
+    _write_records(records, Path(args.out))
+    print(PRIVATE_FILE_NOTICE)
+
+    try:
+        report = deviation_mod.compare(
+            metrics_mod.compute_cells(records), anchor, threshold=args.threshold
+        )
+    except CalibrationError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    print("\nCalibration against " + str(anchor_path) + "\n")
+    for line in report.lines():
+        print(line)
+    print("\n" + report.summary())
+    return EXIT_OK if report.ok else EXIT_FAILED_CHECKS
 
 
 # --------------------------------------------------------------------------
@@ -251,43 +383,28 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     from .agents import load_agent_factory
-    from .eval.records import write_jsonl
-    from .runner import run_condition
-
-    factory = load_agent_factory(args.agent)
 
     if args.all:
-        pairs = [(site.name, condition) for site in sites.all_sites() for condition in conditions.CONDITIONS]
+        pairs = [
+            (site.name, condition)
+            for site in sites.all_sites()
+            for condition in conditions.CONDITIONS
+        ]
     else:
         if not args.site or not args.condition:
             raise SkillShiftError("Pass --site and --condition, or --all.")
         pairs = [(sites.get(args.site).name, conditions.resolve(args.condition).name)]
 
+    plans = [(site, condition, args.tasks or None) for site, condition in pairs]
+    records = _run_pairs(
+        plans,
+        factory=load_agent_factory(args.agent),
+        max_steps=args.max_steps,
+        headless=not args.headed,
+    )
+
     out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    records = []
-
-    for site, condition in pairs:
-        print(f"running {site} / {condition} ...", flush=True)
-        records.extend(
-            run_condition(
-                site=site,
-                condition=condition,
-                agent_factory=factory,
-                task_uids=args.tasks or None,
-                max_steps=args.max_steps,
-                headless=not args.headed,
-                on_record=lambda record: print(
-                    f"  {record.uid:<32} {'PASS' if record.success else 'fail'} "
-                    f"steps={record.steps} skills={record.skill_calls}",
-                    flush=True,
-                ),
-            )
-        )
-
-    per_task = out_dir / "per_task.jsonl"
-    write_jsonl(records, per_task)
-    print(f"\n{len(records)} task record(s) written to {per_task}")
+    _write_records(records, out_dir)
     print(f"Next: skillshift report {out_dir} --out submission/ --name <method> --model <model>")
     return EXIT_OK
 
@@ -375,6 +492,62 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# leaderboard
+
+
+def _check_entry(entry, digests):
+    """Filename problems plus the five leaderboard checks, for one entry."""
+    from . import leaderboard as leaderboard_mod
+    from .eval import validate as validate_mod
+
+    problems = leaderboard_mod.check_filename(entry.path, entry.results)
+    report = validate_mod.validate_submission(
+        entry.results, receipt=entry.receipt, official_digests=digests
+    )
+    return problems, report
+
+
+def cmd_leaderboard_check(args: argparse.Namespace) -> int:
+    """Validate submissions and render the pull-request comment.
+
+    Exit 0 when every checked entry is admissible, 1 when one is not.
+    """
+    from . import leaderboard as leaderboard_mod
+
+    entries = list(leaderboard_mod.load_entries(Path(args.directory)))
+    digests = _load_json(Path(args.digests), "Image digest file") if args.digests else None
+
+    if args.new:
+        new_path = Path(args.new).resolve()
+        targets = [leaderboard_mod.load_entry(new_path)]
+        if not any(entry.path and entry.path.resolve() == new_path for entry in entries):
+            entries.append(targets[0])
+    else:
+        targets = list(entries)
+
+    ok = True
+    for entry in targets:
+        problems, report = _check_entry(entry, digests)
+        ok = ok and report.ok and not problems
+        for problem in problems:
+            print(f"[error] filename: {problem}")
+        for finding in report.findings:
+            print(str(finding))
+        if not args.new:
+            name = entry.path.name if entry.path else entry.name
+            print(f"{name}: {report.summary()}\n")
+
+    if args.new:
+        _, report = _check_entry(targets[0], digests)
+        comment = leaderboard_mod.render_preview(entries, targets[0], report=report)
+        if args.comment:
+            Path(args.comment).write_text(comment, encoding="utf-8")
+        print(comment)
+
+    return EXIT_OK if ok else EXIT_FAILED_CHECKS
+
+
+# --------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -404,7 +577,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     up.set_defaults(func=cmd_env_up)
 
-    calibrate = sub.add_parser("calibrate", help="check your setup against the reference anchor")
+    calibrate = sub.add_parser(
+        "calibrate",
+        help="check your setup against the reference anchor",
+        description=(
+            "Run the no-skill reference agent over the pinned calibration subset and "
+            "report how far each cell sits from the published anchor. "
+            "Exit 0: within tolerance. Exit 1: a gated value deviates beyond the "
+            "threshold. Exit 2: the check could not be made."
+        ),
+    )
+    calibrate.add_argument("--agent", default="reference", help="anchor agent (default: reference)")
+    calibrate.add_argument(
+        "--site", choices=list(sites.SITE_NAMES), help="calibrate one site instead of all three"
+    )
+    calibrate.add_argument("--out", default=CALIBRATION_DEFAULT_OUT)
+    calibrate.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS, dest="max_steps")
+    calibrate.add_argument("--headed", action="store_true", help="show the browser")
+    calibrate.add_argument(
+        "--reference", default=None, help="path to a reference_results file (default: the shipped one)"
+    )
+    calibrate.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        dest="threshold",
+        help="deviation in sigmas beyond which a cell fails (default: the anchor's own)",
+    )
+    calibrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="print the cells and task counts that would run, without running them",
+    )
     calibrate.set_defaults(func=cmd_calibrate)
 
     run = sub.add_parser("run", help="run tasks with an agent")
@@ -434,6 +639,23 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--commit", default=None, help="git commit of the harness used")
     report.add_argument("--digests", default=None, help="path to DIGESTS.json")
     report.set_defaults(func=cmd_report)
+
+    board = sub.add_parser("leaderboard", help="check submissions and render the PR comment")
+    board_sub = board.add_subparsers(dest="leaderboard_command")
+    check = board_sub.add_parser(
+        "check",
+        help="validate submissions in a directory and render the pull-request preview",
+        description=(
+            "Runs the same five checks as `skillshift validate`, adds the filename "
+            "convention, and renders the markdown the leaderboard bot posts. "
+            "Exit 0: admissible. Exit 1: not."
+        ),
+    )
+    check.add_argument("directory", help="the submissions/ directory")
+    check.add_argument("--new", default=None, help="the submission this pull request adds")
+    check.add_argument("--digests", default=None, help="path to DIGESTS.json")
+    check.add_argument("--comment", default=None, help="write the rendered markdown here")
+    check.set_defaults(func=cmd_leaderboard_check)
 
     validate = sub.add_parser("validate", help="run the leaderboard checks locally")
     validate.add_argument("results")

@@ -84,4 +84,5 @@ The paper has no no-skill baseline — all four methods carry a library. The
 built-in `reference` agent fills that gap: plain ReAct over the primitive action
 set only, `ASC = 0` and `SFR = null` by construction. Its purpose is
 calibration, not comparison, and it does not appear on the leaderboard. See
-[metrics.md](metrics.md).
+[calibration.md](calibration.md) for what `skillshift calibrate` does with it,
+and [metrics.md](metrics.md) for the metric definitions.

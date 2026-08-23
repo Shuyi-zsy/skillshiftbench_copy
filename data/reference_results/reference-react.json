@@ -1,0 +1,393 @@
+{
+  "schema_version": "1.0",
+  "status": "pending",
+  "status_note": "Every value is null because the anchor has not been measured yet. It can only be measured once the environment images are tagged and their digests are recorded in skillshift-envs/DIGESTS.json, because the whole point of the anchor is to say 'your deployment is not the deployment these numbers came from'. A placeholder number would be indistinguishable from a measured one. `skillshift calibrate` reports this state and exits 2 rather than certifying anything.",
+  "agent": "reference",
+  "agent_note": "The built-in no-skill ReAct agent (skillshift.agents.reference). It is a calibration anchor, not a competitive method, and it does not appear on the leaderboard.",
+  "model": null,
+  "harness_version": null,
+  "measured_at": null,
+  "env_digests": null,
+  "calibration_set": {
+    "path": "data/calibration_set.json",
+    "rule": "uniform-by-index-v1",
+    "n_families": 30,
+    "n_runs": 180
+  },
+  "sigma_method": null,
+  "sigma_method_note": "How `sigma` is produced: the within-cell standard error of a single 30 x 6 reference run. SR uses the binomial standard error sqrt(p(1-p)/n); AS and ASC use the within-cell sample standard deviation divided by sqrt(n). This captures task-sampling noise, which dominates at n = 14 / 10 / 6, but not run-to-run variation of the language model; the reference run is therefore made at temperature 0. Recorded as null until the run happens, so that nothing here can be mistaken for a measurement.",
+  "threshold_sigma": 3.0,
+  "gated_metrics": [
+    "SR",
+    "AS"
+  ],
+  "gated_metrics_note": "Only SR and AS decide pass or fail. ASC is 0 by construction for a no-skill agent and SFR has no denominator at all; both are recorded for completeness and reported by `skillshift calibrate`, but neither can fail a run.",
+  "cells": {
+    "gitlab": {
+      "src": {
+        "n": 14,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "src-perc": {
+        "n": 14,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "src-exec": {
+        "n": 14,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt": {
+        "n": 14,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt-perc": {
+        "n": 14,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt-exec": {
+        "n": 14,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      }
+    },
+    "magento": {
+      "src": {
+        "n": 10,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "src-perc": {
+        "n": 10,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "src-exec": {
+        "n": 10,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt": {
+        "n": 10,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt-perc": {
+        "n": 10,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt-exec": {
+        "n": 10,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      }
+    },
+    "wordpress": {
+      "src": {
+        "n": 6,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "src-perc": {
+        "n": 6,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "src-exec": {
+        "n": 6,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt": {
+        "n": 6,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt-perc": {
+        "n": 6,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      },
+      "tgt-exec": {
+        "n": 6,
+        "n_skill_calls": null,
+        "SR": {
+          "value": null,
+          "sigma": null
+        },
+        "AS": {
+          "value": null,
+          "sigma": null
+        },
+        "ASC": {
+          "value": null,
+          "sigma": null
+        },
+        "SFR": {
+          "value": null,
+          "sigma": null
+        }
+      }
+    }
+  }
+}

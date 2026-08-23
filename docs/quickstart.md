@@ -61,7 +61,19 @@ skillshift run --agent reference \
 `reference` is the built-in no-skill ReAct agent — the calibration anchor, not a
 competitive method. To run your own, see [custom-agent.md](custom-agent.md).
 
-## 5. Run a condition, then report
+## 5. Check the environment before you trust a number
+
+```bash
+skillshift calibrate
+```
+
+Thirty pinned task families under all six conditions, with the no-skill
+reference agent, compared against a published anchor. It is what separates "my
+method is weak" from "my GitLab came up as the wrong version". The anchor is not
+published yet, so today this exits 2 and says so; see
+[calibration.md](calibration.md).
+
+## 6. Run a condition, then report
 
 ```bash
 skillshift run --agent reference --site gitlab --condition tgt-exec --out runs/demo

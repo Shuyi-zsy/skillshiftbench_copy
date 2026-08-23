@@ -1,11 +1,21 @@
-"""The published Table 1 of the paper, transcribed.
+"""The paper's published result tables, transcribed once.
 
-Layout: metric -> method -> (three website marginals, six condition marginals,
-printed O/A).  Website order is GitLab / Magento / WordPress; condition order is
-src / src-perc / src-exec / tgt / tgt-perc / tgt-exec.
+This module is the single source of every number the project quotes from the
+paper: the transcription tests check it, and `scripts/build_launch_entries.py`
+builds the leaderboard's launch entries from it.  Nothing re-reads the PDF.
 
-`--` entries (AWM's ASC and SFR, which are undefined for prompted textual
-workflows) are omitted rather than encoded as zero.
+TABLE 1 -- benchmark-level comparison, pooled over three backbones
+    metric -> method -> (three website marginals, six condition marginals,
+    printed O/A).  Website order is GitLab / Magento / WordPress; condition
+    order is src / src-perc / src-exec / tgt / tgt-perc / tgt-exec.
+    `--` entries (AWM's ASC and SFR, which are undefined for prompted textual
+    workflows) are omitted rather than encoded as zero.
+
+TABLE 3 -- MPCR versus ASI over one fixed library, GPT-5 mini only
+    metric -> method -> (six condition marginals, printed Average).  The table
+    prints no website breakdown and no AS or SFR row, so those stay absent here
+    rather than being invented; a leaderboard entry built from it carries an
+    explicit null and a reason.
 """
 
 TABLE1 = {
@@ -48,3 +58,31 @@ def rows():
                 dict(zip(CONDITIONS, conditions, strict=True)),
                 overall,
             )
+
+
+#: Table 3: MPCR versus ASI across transfer conditions, GPT-5 mini, one fixed
+#: skill library.  metric -> method -> (six condition values, printed Average).
+TABLE3 = {
+    "SR": {
+        "MPCR": ([56.67, 57.09, 33.23, 43.32, 37.24, 19.99], 41.26),
+        "ASI": ([52.79, 53.02, 26.68, 42.83, 34.32, 17.75], 37.90),
+    },
+    "ASC": {
+        "MPCR": ([0.22, 0.20, 0.19, 0.12, 0.14, 0.03], 0.15),
+        "ASI": ([0.05, 0.13, 0.07, 0.04, 0.05, 0.02], 0.06),
+    },
+}
+
+#: The backbone Table 3 was measured with.
+TABLE3_MODEL = "gpt-5-mini"
+
+#: Metrics Table 3 does not print.  Recorded so that an entry built from it says
+#: why the value is null instead of leaving the reader to guess.
+TABLE3_ABSENT_METRICS = ("AS", "SFR")
+
+
+def table3_rows():
+    """Yield (metric, method, conditions_dict, printed_average)."""
+    for metric, methods in TABLE3.items():
+        for method, (conditions, average) in methods.items():
+            yield (metric, method, dict(zip(CONDITIONS, conditions, strict=True)), average)

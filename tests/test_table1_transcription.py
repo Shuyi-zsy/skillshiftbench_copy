@@ -9,7 +9,7 @@ task-count-weighted overall does (see `test_task_weighted_overall_...`).
 import pytest
 
 from skillshift.eval import metrics
-from tests.table1 import rows
+from tests.table1 import rows, table3_rows
 
 
 @pytest.mark.parametrize("metric,method,websites,conditions,overall", list(rows()))
@@ -68,3 +68,25 @@ def test_check_marginals_skips_nulls_and_says_so():
         ("src", "src-perc", "src-exec", "tgt", "tgt-perc", "tgt-exec"), None
     )
     assert metrics.check_marginals(websites=websites, conditions=conditions, overall=None) == ()
+
+
+@pytest.mark.parametrize("metric,method,conditions,average", list(table3_rows()))
+def test_table3_condition_marginals_reproduce_the_printed_average(
+    metric, method, conditions, average
+):
+    macro = sum(conditions.values()) / len(conditions)
+    assert macro == pytest.approx(average, abs=metrics.MARGINAL_TOLERANCE)
+
+
+@pytest.mark.parametrize("metric,method,conditions,average", list(table3_rows()))
+def test_table3_passes_the_leaderboard_marginal_check_without_website_values(
+    metric, method, conditions, average
+):
+    # Table 3 prints no website breakdown. The leaderboard check has to accept
+    # that: null marginals are skipped, not read as zero.
+    problems = metrics.check_marginals(
+        websites=dict.fromkeys(("gitlab", "magento", "wordpress")),
+        conditions=conditions,
+        overall=average,
+    )
+    assert problems == (), f"{metric}/{method}: {problems}"

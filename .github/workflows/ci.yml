@@ -40,6 +40,9 @@ jobs:
       - name: Offline smoke test
         run: python scripts/smoke_test.py
 
+      - name: Calibration subset still matches its sampling rule
+        run: python scripts/build_calibration_set.py --check
+
       - name: Console script is installed
         run: |
           skillshift --version

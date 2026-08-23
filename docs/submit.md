@@ -6,6 +6,16 @@ Read [results-policy.md](results-policy.md). The short version: you submit
 aggregate numbers and a run receipt. You do **not** submit per-task judgements
 or traces.
 
+## 0. Calibrate
+
+```bash
+skillshift calibrate
+```
+
+An uncalibrated run tells you that a number came out, not that it means
+anything. Do this before the full sweep, not after it. See
+[calibration.md](calibration.md).
+
 ## 1. Run
 
 ```bash

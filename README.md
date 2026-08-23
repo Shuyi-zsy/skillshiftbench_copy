@@ -67,6 +67,7 @@ fifty lines.
 
 ```bash
 skillshift env status                        # which sites and versions are reachable
+skillshift calibrate                         # is my environment the published one?
 skillshift run --agent <spec> --all          # 3 sites x 6 conditions
 skillshift report runs/mine --out submission/ --name M --model gpt-5-mini-2025-08-07
 skillshift validate submission/results.json  # exactly the leaderboard's checks
@@ -103,6 +104,7 @@ scanning will flag them; that is expected. See [SECURITY.md](SECURITY.md).
 | --- | --- |
 | [quickstart.md](docs/quickstart.md) | from clone to a first task |
 | [environments.md](docs/environments.md) | deploying the three websites |
+| [calibration.md](docs/calibration.md) | checking your deployment against the anchor |
 | [custom-agent.md](docs/custom-agent.md) | **running your own method** |
 | [metrics.md](docs/metrics.md) | SR / AS / ASC / SFR, and how they aggregate |
 | [results-policy.md](docs/results-policy.md) | what is published, and why |

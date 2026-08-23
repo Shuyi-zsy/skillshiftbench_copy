@@ -44,3 +44,7 @@ class EnvironmentNotReadyError(SkillShiftError):
 
 class SkillRecordingError(SkillShiftError):
     """Raised when an agent misuses the skill-call recorder."""
+
+
+class CalibrationError(SkillShiftError):
+    """Raised when the calibration subset or the reference results cannot be used."""
