@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skillshift-bench.github.io/schemas/results.schema.json",
+  "title": "SkillShift-Bench leaderboard submission",
+  "description": "Aggregate diagnostics for one method on one model. The shape is deliberately identical to Table 1 of the paper: three website marginals, six condition marginals, and an overall value -- ten numbers per metric, not an 18-cell cross product. Per-task judgements and execution traces are never part of a submission; see docs/results-policy.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "submission",
+    "harness_version",
+    "metrics",
+    "n"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "submission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "date",
+        "method",
+        "model",
+        "provenance"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Display name on the leaderboard, e.g. 'MPCR (full)'."
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "contact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200,
+          "description": "Where to reach the submitter about a disputed entry."
+        },
+        "method": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1000
+            },
+            "paper_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "code_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri",
+              "description": "Null is allowed but is shown on the leaderboard as 'code not released'."
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "temperature": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "vision": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "source"
+          ],
+          "properties": {
+            "label": {
+              "type": "string",
+              "enum": [
+                "reported-only",
+                "verified-paper",
+                "self-reported"
+              ],
+              "description": "reported-only: numbers taken from a paper whose code is not released. verified-paper: numbers from the SkillShift-Bench paper, produced by its authors. self-reported: an external run, which must ship a run receipt."
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Where the numbers came from, e.g. 'paper Table 1' or 'run 2026-09-01'."
+            },
+            "code_released": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "repro_command": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000,
+          "description": "One command that reproduces the run."
+        }
+      }
+    },
+    "harness_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version of skillshift-bench used, or 'n/a' for numbers transcribed from a paper."
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "SR",
+        "AS",
+        "ASC",
+        "SFR"
+      ],
+      "properties": {
+        "SR": {
+          "$ref": "#/$defs/percentBreakdown"
+        },
+        "AS": {
+          "$ref": "#/$defs/positiveBreakdown"
+        },
+        "ASC": {
+          "$ref": "#/$defs/nonNegativeBreakdown"
+        },
+        "SFR": {
+          "$ref": "#/$defs/percentBreakdown"
+        }
+      }
+    },
+    "n": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "websites",
+        "conditions"
+      ],
+      "properties": {
+        "websites": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gitlab",
+            "magento",
+            "wordpress"
+          ],
+          "properties": {
+            "gitlab": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "magento": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wordpress": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "src",
+            "src-perc",
+            "src-exec",
+            "tgt",
+            "tgt-perc",
+            "tgt-exec"
+          ],
+          "patternProperties": {
+            "^(src|src-perc|src-exec|tgt|tgt-perc|tgt-exec)$": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "skill_calls": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Total learned-skill invocations behind each marginal. Required for a self-reported entry, because it is what decides whether SFR is flagged as low-confidence.",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "reasons": {
+      "type": "object",
+      "description": "Why a value is null. Keyed by metric ('ASC') or by a specific cell ('SFR.websites.wordpress'). Every null must have an entry.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    }
+  },
+  "$defs": {
+    "percentValue": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100,
+      "description": "A percentage, as printed in the paper's table (35.29, not 0.3529). Null means not reported; `reasons` must then say why."
+    },
+    "positiveValue": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "A strictly positive mean. Null means not reported."
+    },
+    "nonNegativeValue": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "A non-negative mean. Null means not reported."
+    },
+    "percentBreakdown": {
+      "type": "object",
+      "description": "Ten values: three website marginals, six condition marginals, and the overall macro-average.",
+      "additionalProperties": false,
+      "required": [
+        "websites",
+        "conditions",
+        "overall"
+      ],
+      "properties": {
+        "websites": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gitlab",
+            "magento",
+            "wordpress"
+          ],
+          "properties": {
+            "gitlab": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "magento": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "wordpress": {
+              "$ref": "#/$defs/percentValue"
+            }
+          }
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "src",
+            "src-perc",
+            "src-exec",
+            "tgt",
+            "tgt-perc",
+            "tgt-exec"
+          ],
+          "properties": {
+            "src": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "src-perc": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "src-exec": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "tgt": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "tgt-perc": {
+              "$ref": "#/$defs/percentValue"
+            },
+            "tgt-exec": {
+              "$ref": "#/$defs/percentValue"
+            }
+          }
+        },
+        "overall": {
+          "$ref": "#/$defs/percentValue"
+        }
+      }
+    },
+    "positiveBreakdown": {
+      "type": "object",
+      "description": "Ten values: three website marginals, six condition marginals, and the overall macro-average.",
+      "additionalProperties": false,
+      "required": [
+        "websites",
+        "conditions",
+        "overall"
+      ],
+      "properties": {
+        "websites": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gitlab",
+            "magento",
+            "wordpress"
+          ],
+          "properties": {
+            "gitlab": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "magento": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "wordpress": {
+              "$ref": "#/$defs/positiveValue"
+            }
+          }
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "src",
+            "src-perc",
+            "src-exec",
+            "tgt",
+            "tgt-perc",
+            "tgt-exec"
+          ],
+          "properties": {
+            "src": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "src-perc": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "src-exec": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "tgt": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "tgt-perc": {
+              "$ref": "#/$defs/positiveValue"
+            },
+            "tgt-exec": {
+              "$ref": "#/$defs/positiveValue"
+            }
+          }
+        },
+        "overall": {
+          "$ref": "#/$defs/positiveValue"
+        }
+      }
+    },
+    "nonNegativeBreakdown": {
+      "type": "object",
+      "description": "Ten values: three website marginals, six condition marginals, and the overall macro-average.",
+      "additionalProperties": false,
+      "required": [
+        "websites",
+        "conditions",
+        "overall"
+      ],
+      "properties": {
+        "websites": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gitlab",
+            "magento",
+            "wordpress"
+          ],
+          "properties": {
+            "gitlab": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "magento": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "wordpress": {
+              "$ref": "#/$defs/nonNegativeValue"
+            }
+          }
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "src",
+            "src-perc",
+            "src-exec",
+            "tgt",
+            "tgt-perc",
+            "tgt-exec"
+          ],
+          "properties": {
+            "src": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "src-perc": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "src-exec": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "tgt": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "tgt-perc": {
+              "$ref": "#/$defs/nonNegativeValue"
+            },
+            "tgt-exec": {
+              "$ref": "#/$defs/nonNegativeValue"
+            }
+          }
+        },
+        "overall": {
+          "$ref": "#/$defs/nonNegativeValue"
+        }
+      }
+    }
+  }
+}

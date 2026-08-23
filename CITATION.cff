@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use SkillShift-Bench, please cite the paper."
+title: "SkillShift-Bench: Diagnosing Learned-Skill Executability of Web Agents under Controlled Website Evolution"
+type: software
+repository-code: "https://github.com/SkillShift-Bench/skillshift-bench"
+url: "https://skillshift-bench.github.io"
+license: MIT
+# TODO before release: authors, arXiv / ACL Anthology identifiers, and year.
+authors:
+  - name: "SkillShift-Bench Authors"
+preferred-citation:
+  type: conference-paper
+  title: "SkillShift-Bench: Diagnosing Learned-Skill Executability of Web Agents under Controlled Website Evolution"
+  collection-title: "Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing"
+  year: 2026
+  authors:
+    - name: "SkillShift-Bench Authors"

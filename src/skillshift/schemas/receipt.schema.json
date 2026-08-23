@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skillshift-bench.github.io/schemas/receipt.schema.json",
+  "title": "SkillShift-Bench run receipt",
+  "description": "Provenance for one run, plus a SHA-256 commitment to its per-task results. The per-task file itself never leaves the machine that produced it: only the digest is published. If an entry is disputed, the maintainers may ask the submitter privately for the per-task file and check it against this commitment (docs/results-policy.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "harness_version",
+    "env_digests",
+    "model",
+    "n_per_cell",
+    "aggregate",
+    "per_task_commitment",
+    "timestamp"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "harness_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Released version of skillshift-bench, e.g. '0.1.0'."
+    },
+    "harness_commit": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "Git commit of the harness, when the run came from a checkout."
+    },
+    "env_digests": {
+      "type": "object",
+      "description": "sha256 digest of each environment image used, keyed by environment name (gitlab-v12, gitlab-v16, magento-v19, magento-v24, wordpress). Checked against skillshift-envs/DIGESTS.json.",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": ["string", "null"],
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "temperature": { "type": ["number", "null"], "minimum": 0 },
+        "vision": { "type": ["boolean", "null"] },
+        "base_url": { "type": ["string", "null"] }
+      }
+    },
+    "n_per_cell": {
+      "type": "object",
+      "description": "Task count per (website, condition) cell. Must equal the official counts: gitlab 162, magento 114, wordpress 79.",
+      "additionalProperties": false,
+      "required": ["gitlab", "magento", "wordpress"],
+      "patternProperties": {
+        "^(gitlab|magento|wordpress)$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["src", "src-perc", "src-exec", "tgt", "tgt-perc", "tgt-exec"],
+          "patternProperties": {
+            "^(src|src-perc|src-exec|tgt|tgt-perc|tgt-exec)$": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "description": "Verbatim copy of the submission's `metrics` and `n` objects. CI compares it field by field with results.json.",
+      "additionalProperties": false,
+      "required": ["metrics", "n"],
+      "properties": {
+        "metrics": { "type": "object" },
+        "n": { "type": "object" }
+      }
+    },
+    "per_task_commitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "canonical_form", "value", "n_records"],
+      "properties": {
+        "algorithm": { "type": "string", "const": "sha256" },
+        "canonical_form": {
+          "type": "string",
+          "const": "skillshift/per-task-v1",
+          "description": "Serialization the digest is taken over; see skillshift.eval.receipt.canonical_per_task_form."
+        },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "n_records": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "UTC ISO-8601 timestamp of when the report was generated."
+    },
+    "notes": { "type": ["string", "null"], "maxLength": 2000 }
+  }
+}

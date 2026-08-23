@@ -1,0 +1,31 @@
+# Data and environment licensing
+
+The **code** in this repository is MIT licensed (see LICENSE). The benchmark
+tasks and the website environments are separate, and carry upstream terms.
+
+## Tasks
+
+The 355 task specifications in `data/tasks/` are released under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). A subset derives from
+WebArena's task format and instantiation conventions
+(<https://github.com/web-arena-x/webarena>, Apache-2.0); those conventions are
+retained.
+
+## Environments
+
+The website images are derived from upstream projects and remain under their own
+licenses. We redistribute snapshots for reproducibility only.
+
+| Environment | Upstream | License |
+| --- | --- | --- |
+| GitLab 12.0 / 16.0 CE | <https://gitlab.com/gitlab-org/gitlab-foss> | MIT |
+| Magento 1.9 | <https://github.com/OpenMage/magento-lts> | OSL-3.0 |
+| Magento 2.4 | WebArena `shopping_admin_final_0719.tar` | OSL-3.0 / AFL-3.0; not redistributed here — see docs/environments.md |
+| WordPress | <https://wordpress.org> | GPL-2.0-or-later |
+
+Sample content inside these images (repositories, products, posts, user
+accounts) is synthetic benchmark data or inherited from WebArena.
+
+> **Open item.** The provenance of the Magento 1.9 backup — built from scratch
+> or derived from a third-party image — is still being confirmed, and decides
+> whether it can be redistributed. Until then it is linked, not re-hosted.

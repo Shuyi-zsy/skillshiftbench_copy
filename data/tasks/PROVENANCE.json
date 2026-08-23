@@ -1,0 +1,71 @@
+{
+  "note": "Task files are taken from the artifact's Software/src/Benchmark copy, which is the copy the harness loads and therefore the copy the paper's numbers were produced with. The uid / family_id / legacy_id fields are added here; all other fields are verbatim.",
+  "files": [
+    {
+      "site": "gitlab",
+      "site_version": "v1",
+      "output": "tasks/gitlab/v1.json",
+      "source": "Software/src/Benchmark/gitlab_task/gitlab_tasks_v1.json",
+      "source_sha256": "3d645882c50c97e33451e6cbe83f3452e2818f174aa5b27ac8691ec119567ab1",
+      "duplicate_copy": "Data/tasks/gitlab_task/gitlab_tasks_v1.json",
+      "duplicate_copy_sha256": "3d645882c50c97e33451e6cbe83f3452e2818f174aa5b27ac8691ec119567ab1",
+      "copies_identical": true,
+      "n_tasks": 162
+    },
+    {
+      "site": "gitlab",
+      "site_version": "v2",
+      "output": "tasks/gitlab/v2.json",
+      "source": "Software/src/Benchmark/gitlab_task/gitlab_tasks_v2.json",
+      "source_sha256": "a24e812928f3155202a958d136ac57123a69cd98373f1a61230c1575afb5c875",
+      "duplicate_copy": "Data/tasks/gitlab_task/gitlab_tasks_v2.json",
+      "duplicate_copy_sha256": "a24e812928f3155202a958d136ac57123a69cd98373f1a61230c1575afb5c875",
+      "copies_identical": true,
+      "n_tasks": 162
+    },
+    {
+      "site": "magento",
+      "site_version": "v1",
+      "output": "tasks/magento/v1.json",
+      "source": "Software/src/Benchmark/admin_task/admin_tasks_v1.json",
+      "source_sha256": "bf6d71a65d77e6bc1bad4cf245df371ba800e7cf9136a1a8669f884c8ed815f9",
+      "duplicate_copy": "Data/tasks/admin_task/admin_tasks_v1.json",
+      "duplicate_copy_sha256": "40f4f14b6795a7f596b489b6dea6f32f67cc329b24eaafc096b2a4086c7da402",
+      "copies_identical": false,
+      "n_tasks": 114
+    },
+    {
+      "site": "magento",
+      "site_version": "v2",
+      "output": "tasks/magento/v2.json",
+      "source": "Software/src/Benchmark/admin_task/admin_tasks_v2.json",
+      "source_sha256": "af824fd014b40ad13ee17a5fb03ed26d9c4cda28f20ab66a6d5565d75c5f96d6",
+      "duplicate_copy": "Data/tasks/admin_task/admin_tasks_v2.json",
+      "duplicate_copy_sha256": "5caabc8affa1f8193df4fd5609e75fbdc54d53104dc779876a52190eaa587201",
+      "copies_identical": false,
+      "n_tasks": 114
+    },
+    {
+      "site": "wordpress",
+      "site_version": "v1",
+      "output": "tasks/wordpress/tasks.json",
+      "source": "Software/src/Benchmark/wordpress_task/wordpress_tasks.json",
+      "source_sha256": "e1ad5629fcd26f17715203476958dcbbc0d2802aee152472c2307fb67b85662e",
+      "duplicate_copy": "Data/tasks/wordpress_task/wordpress_tasks.json",
+      "duplicate_copy_sha256": "e1ad5629fcd26f17715203476958dcbbc0d2802aee152472c2307fb67b85662e",
+      "copies_identical": true,
+      "n_tasks": 79
+    },
+    {
+      "site": "wordpress",
+      "site_version": "v2",
+      "output": "tasks/wordpress/tasks.json",
+      "source": "Software/src/Benchmark/wordpress_task/wordpress_tasks.json",
+      "source_sha256": "e1ad5629fcd26f17715203476958dcbbc0d2802aee152472c2307fb67b85662e",
+      "duplicate_copy": "Data/tasks/wordpress_task/wordpress_tasks.json",
+      "duplicate_copy_sha256": "e1ad5629fcd26f17715203476958dcbbc0d2802aee152472c2307fb67b85662e",
+      "copies_identical": true,
+      "n_tasks": 79
+    }
+  ]
+}

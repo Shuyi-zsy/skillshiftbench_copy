@@ -1,0 +1,44 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# ---------------------------------------------------------------------------
+# Per-task judgements and execution traces are NOT published.
+#
+# SkillShift-Bench publishes aggregate numbers only, so that the benchmark
+# cannot be overfitted task by task. `skillshift report` writes per_task.jsonl
+# next to the two files you do submit; keep it locally (the run receipt commits
+# to its contents, and the maintainers may ask for it privately if an entry is
+# disputed), but never commit it and never attach it to a pull request.
+# See docs/results-policy.md.
+# ---------------------------------------------------------------------------
+per_task.jsonl
+**/per_task.jsonl
+runs/
+results/
+trajectories/
+llm_info/
+my_log/
+prompt.txt.dump
+
+# Local runtime dumps / secrets
+.env
+*.local

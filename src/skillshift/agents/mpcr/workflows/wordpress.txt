@@ -1,0 +1,43 @@
+Task: Identify the {{info1}} and the {{info2}} of {{adj}} post on the homepage.
+Action Trajectory:
+```goto({homepage_url})```  # navigate to the site's homepage
+```click({homepage_target_post})```  # open or focus the specified post on the homepage (e.g., second-most recent, featured, etc.)
+```click({post_meta_section})```  # open or reveal the post metadata area where the requested info items are shown
+```send_msg_to_user("{{info1}}: {info1_value}\n{{info2}}: {info2_value}")```  # extract the two pieces of information from the metadata and send them to the user
+
+Task: Use the site search bar to search for the keyword {{target_word}}, and click on the {{adj}} result.
+Action Trajectory:
+```click({search_bar})```  # focus or open the site's search input field
+```fill({search_bar}, {target_word})```  # enter the target keyword into the search input
+```keyboard_press("Enter")```  # submit the search to load results
+```click({adj_result})```  # click the specified (e.g., first/second/third) search result
+
+Task: Navigate to the tag archive for {tag}.
+Action Trajectory:
+```click({search_bar})```  # focus the site's search input field
+```fill({search_bar}, {tag})```  # enter the tag name into the search input
+```keyboard_press("Enter")```  # submit the search to load results
+```click({tag_archive_result})```  # click the result or tag link that opens the tag archive page
+
+Task: Scroll to the bottom of the homepage and navigate to page {page_num} of the blog feed.
+Action Trajectory:
+```scroll(0, 4000)```  # scroll down the homepage to reveal pagination or load additional content at the bottom
+```goto("http://localhost:8000/?paged={page_num}")```  # navigate directly to the blog feed URL for the requested page number
+
+Task: Open the article {title} and check if it contains an image related to {keyword}.
+Action Trajectory:
+```fill({search_field}, {title})```  # enter the article title into the site's search input
+```keyboard_press("Enter")```  # submit the search to locate the article
+```click({post_result})```  # open the matching article from the search results
+```click({article_media_section})```  # open or reveal the article's media area to inspect images and captions
+```send_msg_to_user("Contains image related to {keyword}: {yes_or_no}\nAlt text: {alt_text}\nImage URL: {image_url}")```  # report whether an image related to the keyword is present and include its alt text and URL if found
+
+Task: Go to the {title} post and leave a comment saying: {content}.
+Action Trajectory:
+```fill({search_field}, {title})```  # enter the post title into the site's search input
+```keyboard_press("Enter")```  # submit the search to locate the post
+```click({post_result})```  # open the matching post from the search results
+```fill({comment_field}, {content})
+fill({name_field}, {commenter_name})
+fill({email_field}, {commenter_email})```  # fill the comment text and required commenter name and email fields
+```click({submit_button})```  # submit the comment to post it under the article

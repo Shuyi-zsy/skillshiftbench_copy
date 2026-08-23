@@ -1,0 +1,228 @@
+Task: Display the list of issues in the {repo} repository that have labels related to {label}
+Action Trajectory:
+```click({repo_item})```  # open the repository page
+```click({issues_tab})```  # open the Issues tab for the repository
+```click({labels_button})```  # open the labels menu or focus the label filter controls
+```click({label_item})```  # select the specific label to filter the issues list
+```send_msg_to_user("Issues in {repo} with label {label}: {issues_list}")```  # extract and send the filtered list of issues to the user
+
+Task: Open my latest updated issue that has keyword {keyword} in its title to check if it is closed
+Action Trajectory:
+```click({repo_item})```  # open the repository page that contains the issues
+```click({issues_tab})```  # open the Issues tab for the repository
+```fill({issues_search}, {keyword})```  # enter the keyword into the issue search/filter box to narrow titles
+```click({latest_filtered_issue})```  # open the topmost result, which is the most recently updated issue matching the keyword
+```send_msg_to_user("Opened issue '{issue_title}' (#{issue_number}). Status: {OPEN/CLOSED}")```  # report whether the opened issue is open or closed
+
+Task: Show the SSH git clone command for a given repository.
+Action Trajectory:
+```click({repo_item})```  # open the repository page
+```click({code_button})```  # open the "Code"/clone panel on the repo page
+```click({ssh_option})```  # select the SSH option to reveal the SSH clone URL
+```send_msg_to_user("git clone {ssh_url}")```  # send the SSH clone command using the revealed SSH URL
+
+Task: Identify who has made the most commits to the {repo} project.
+Action Trajectory:
+```click({repo_item})```  # open the repository page
+```click({contributors_tab})```  # open the Contributors page that lists contributors and commit counts
+```send_msg_to_user("{top_contributor} has the most commits on {repo}: {commit_count} commits.")```  # extract the top contributor and their commit count from the contributors page and report it
+
+Task: Determine how many commits a given user made on a specific date.
+Action Trajectory:
+```click({repo_item})```  # open the repository or project page that contains the commits/history
+```click({commits_tab})```  # open the Commits/History view for the repository
+```fill({author_filter}, {user})```  # filter the commits list by the author's username
+```fill({date_filter}, {date})```  # apply a date filter or set a date-range to the specific date
+```send_msg_to_user("On {date}, {user} made {commit_count} commits.")```  # extract the filtered commits count and report it to the user
+
+Task: Determine how many commits {user} made to {repo} on {date}
+Action Trajectory:
+```click({repo_item})```  # open the repository page that contains the commits/history
+```click({commits_tab})```  # open the Commits/History view for the repository
+```fill({author_filter}, {user})```  # filter the commits list by the author's username
+```fill({date_filter}, {date})```  # apply a date filter or set a date-range to the specific date
+```send_msg_to_user("On {date}, {user} made {commit_count} commits to {repo}.")```  # extract the filtered commits count and report it
+
+Task: List the {attribute} of the top 3 contributors to the {repo} repository, ranked by number of commits.
+Action Trajectory:
+```click({repo_item})```  # open the repository page
+```click({contributors_tab})```  # open the Contributors page to view contributors and their commit counts
+```send_msg_to_user("Top 3 contributors for {repo} (by commits): 1) {contrib1_name} — {commits1} commits — {attribute1}\n2) {contrib2_name} — {commits2} commits — {attribute2}\n3) {contrib3_name} — {commits3} commits — {attribute3}")```  # extract the top 3 contributors and their requested attribute from the contributors page and report them
+
+Task: List all open issues matching {description}
+Action Trajectory:
+```click({repo_item})```  # open the repository page that contains the issues
+```click({issues_tab})```  # open the Issues tab for the repository
+```fill({issues_search}, {description})```  # enter the description or keyword into the issue search/filter box to narrow results
+```click({open_filter})```  # ensure the list is filtered to only Open issues
+```send_msg_to_user("Open issues matching {description}: {issues_list}")```  # extract and send the filtered list of open issues to the user
+
+Task: Show usernames of other users who have access to my repository {repo}
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({settings_button})```  # open the repository or project settings where access controls are managed
+```click({members_tab})```  # open the Members/Access/Collaborators section to view users with access
+```send_msg_to_user("Other members with access to {repo}: {members_list}")```  # extract and send the list of usernames (and optionally roles and totals) to the user
+
+Task: Update the project site's title to {title}
+Action Trajectory:
+```click({repo_item})```  # open the repository or project that contains the site files
+```click({file_item})```  # open the site file (e.g., index.html) in the web editor or file viewer
+```fill({file_editor}, {updated_file_content})```  # replace the file contents (or edit the <title> tag and any site heading) so the <title> element contains {title}
+```click({commit_changes_button})```  # save/commit the changes to the repository
+```send_msg_to_user("Updated the project site's title to {title}.")```  # confirm the title has been updated
+
+Task: Assign the issue regarding {issue} in {repo} to {account}.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({issue_item})```  # open the specific issue regarding {issue}
+```click({assignee_button})```  # open the assignee dropdown or controls on the issue page
+```click({account_item})```  # select {account} from the assignee list to assign the issue
+```send_msg_to_user("Issue '{issue}' in {repo} is assigned to {account}.")```  # confirm the assignment to the user
+
+Task: Fork {repo}.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({fork_button})```  # click the fork button to initiate forking
+```click({fork_target_account})```  # choose the target account or organization to fork into (if prompted)
+```send_msg_to_user("Forked {repo} to {target_account}.")```  # confirm the repository was forked to the selected account
+
+Task: Change the LICENSE of {repo} to a copyleft license that requires all copies and derivative works to be distributed under the same license.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({license_file})```  # open the existing LICENSE file or the UI to create a new LICENSE file if it doesn't exist
+```fill({file_editor}, {license_content})```  # replace or enter the LICENSE text with the chosen copyleft license content (e.g., GPL text)
+```click({commit_changes_button})```  # commit/save the LICENSE file with an appropriate commit message
+```send_msg_to_user("Updated LICENSE of {repo} to {license_name}, which requires copies and derivative works to be licensed under the same terms.")```  # confirm the change to the user
+
+Task: Post {content} as a comment on the merge request {mr} in the {repo} project.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({mr_item})```  # open the specific merge request {mr}
+```fill({comment_field}, {content})```  # enter the comment text into the merge request comment box
+```click({submit_comment_button})```  # submit/post the comment on the merge request
+```send_msg_to_user("Posted '{content}' on merge request '{mr}' in {repo}.")```  # confirm the comment was posted to the user
+
+Task: Change the LICENSE of {repo} to the MIT license.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({license_file})```  # open the existing LICENSE file or the UI to create a new LICENSE file if it doesn't exist
+```fill({file_editor}, {mit_license_text})```  # replace or enter the MIT license text into the file editor
+```click({commit_changes_button})```  # save/commit the LICENSE file with an appropriate commit message
+```send_msg_to_user("Updated LICENSE of {repo} to the MIT License.")```  # confirm the change to the user
+
+Task: Set the homepage (Website) URL on my GitLab profile to {url}
+Action Trajectory:
+```click({profile_avatar})```  # open the user/profile menu to access profile settings
+```click({edit_profile})```  # open the "Edit profile" or profile settings page
+```fill({website_field}, {url})```  # fill the "Website" / "Website url" field with the desired URL
+```click({save_button})```  # save/submit the profile changes
+```send_msg_to_user("Updated profile Website URL to {url}.")```  # confirm the profile website URL was updated
+
+Task: Set my GitLab status to {status}
+Action Trajectory:
+```click({profile_avatar})```  # open the user/profile menu to access status controls
+```click({edit_status_button})```  # open the status edit dialog or menu
+```fill({status_input}, {status})```  # enter the desired status text
+```click({save_status_button})```  # save/confirm the new status
+```send_msg_to_user("Updated GitLab status to '{status}'.")```  # confirm the status update to the user
+
+Task: Set up a new, empty repository named {project_name}.
+Action Trajectory:
+```click({new_repository_button})```  # open the "Create new repository" page
+```fill({repository_name_field}, {project_name})```  # enter the desired repository name
+```click({initialize_with_readme_checkbox})```  # ensure "Initialize with README" is unchecked so the repo is created empty
+```click({create_repository_button})```  # submit the form to create the new repository
+```send_msg_to_user("Created a new empty repository named {project_name}.")```  # confirm creation to the user
+
+Task: Invite {name} to the repository as a Guest.
+Action Trajectory:
+```click({repo_item})```  # open the repository page
+```click({members_tab})```  # open the Members / Access section
+```click({invite_members_button})```  # open the invite members dialog
+```fill({invite_field}, {name})
+click({invite_as_guest_button})```  # enter the person's name/username and choose/send the Guest-role invitation
+```send_msg_to_user("Invited {name} to {repo} as Guest.")```  # confirm the invitation to the user
+
+Task: Open a new issue titled {issue} in {repo}.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({new_issue_button})```  # open the "New issue" form
+```fill({title_field}, {issue})
+fill({description_field}, {issue_body})```  # enter the issue title and body/description
+```click({create_issue_button})```  # submit/create the issue
+```send_msg_to_user("Opened issue '{issue}' in {repo}. Status: Open.")```  # confirm the new issue to the user
+
+Task: Star the top {number} most starred repositories on GitLab.
+Action Trajectory:
+```goto({explore_projects_sorted_by_stars_url})```  # open the Explore Projects page sorted by stars (e.g., /explore/projects?sort=stars_desc)
+```click({top_{number}_star_icons})```  # click the star icon for each of the top {number} repositories on the page (replace this placeholder with the actual element ids for the star buttons in order)
+```send_msg_to_user("Clicked star icons for the top {number} most-starred projects. If any did not toggle, I can open those project pages and try again.")```  # confirm the action to the user
+
+Task: Create a milestone for the upcoming {event} starting on {start_date} and ending on {end_date}
+Action Trajectory:
+```goto({milestones_url})```  # open the project's Milestones page
+```click({new_milestone_button})```  # open the "New milestone" form
+```fill({title_field}, {event})
+fill({start_date_field}, {start_date})
+fill({due_date_field}, {end_date})```  # enter the milestone title, start date, and due date
+```click({create_milestone_button})```  # submit/create the milestone
+```send_msg_to_user("Created milestone '{event}' with start date {start_date} and due date {end_date}.")```  # confirm the milestone was created
+
+Task: Open a new issue to discuss the implementation of {feature}
+Action Trajectory:
+```click({repo_item})```  # open the repository page where the issue should be created
+```click({new_issue_button})```  # open the "New issue" form
+```fill({title_field}, {issue_title})
+fill({description_field}, {issue_body})```  # enter an informative title (e.g., "Discuss implementation of {feature}") and a description outlining goals, design options, and discussion points
+```click({create_issue_button})```  # submit/create the issue
+```send_msg_to_user("Opened issue to discuss implementation of {feature}: {issue_title}")```  # confirm the issue was created and report its title or URL to the user
+
+Task: Create a private {template} repository called "{project_name}" using the appropriate template to speed up development.
+Action Trajectory:
+```click({new_project_button})```  # open the "Create new project" / new repository page
+```click({create_from_template_tab})```  # choose the option to create the project from a template
+```click({template_item})```  # select the template that matches {template} to prepopulate project files and settings
+```fill({project_name_field}, {project_name})
+click({visibility_private_option})```  # enter the project name and set visibility to Private
+```click({create_project_button})
+send_msg_to_user("Created private {template} project '{project_name}' from the selected template. It is ready for development.")```  # create the project and confirm creation to the user
+
+Task: Create a new group "{name}" and add members {members}
+Action Trajectory:
+```click({groups_nav})```  # open the Groups section of the UI
+```click({new_group_button})```  # open the "New group" / create group form
+```fill({group_name_field}, {name})
+fill({group_path_field}, {name})
+click({create_group_button})```  # enter the group name (and path, default to the name) and create the group
+```click({members_tab})
+for each member in {members}:
+    fill({member_input_field}, {member})
+    keyboard_press("ArrowDown")
+    keyboard_press("Enter")
+    click({add_member_button})```  # open the group's Members/Invite UI and add each member via the autocomplete + add action
+```send_msg_to_user("Created group '{name}' and added members: {members}.")```  # confirm the group was created and members added
+
+Task: Create a new {scope} project named {project_name} and add members {account_list}.
+Action Trajectory:
+```click({new_project_button})```  # open the "Create new project" page
+```fill({project_name_field}, {project_name})```  # enter the project name
+```click({visibility_option})```  # set the project visibility to the desired {scope} (e.g., Public/Private/Internal)
+```click({create_project_button})```  # create the project with the specified name and visibility
+```click({members_tab})
+for each member in {account_list}:
+    fill({member_input_field}, {member})
+    keyboard_press("ArrowDown")
+    keyboard_press("Enter")
+    click({add_member_button})```  # open the project's Members/Access UI and add each account from {account_list}
+
+Task: Create an issue in the {repo} repository with title "{issue}", assign it to {account}, and set the due date to {due}.
+Action Trajectory:
+```click({repo_item})```  # open the repository page for {repo}
+```click({new_issue_button})```  # open the "New issue" form
+```fill({title_field}, {issue})```  # enter the issue title
+```click({assignee_button})
+click({assignee_item})```  # open assignee controls and select {account} as the assignee
+```fill({due_date_field}, {due})
+click({create_issue_button})
+send_msg_to_user("Created issue '{issue}' in {repo}, assigned to {account}. Due date set to {due}.")```  # set due date, create the issue, and confirm to the user
