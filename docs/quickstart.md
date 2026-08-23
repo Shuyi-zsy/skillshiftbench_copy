@@ -26,9 +26,14 @@ for GitLab 12.0 (the `src` context):
 
 ```bash
 git clone https://github.com/SkillShift-Bench/skillshift-envs
-cd skillshift-envs && ./setup.sh --site gitlab --version v1
+cd skillshift-envs && ./setup.sh --site gitlab --condition src
 export GITLAB_V1=http://localhost:8080
 ```
+
+A condition implies a version — `src`, `src-perc` and `src-exec` all run against
+v1 — so `--version v1` is accepted as a synonym. Add `--dry-run` to see every
+command it would run first. With a checkout beside this one, `skillshift env up
+--site gitlab --condition src` drives the same script.
 
 GitLab takes several minutes to become ready on a cold start. Check with:
 

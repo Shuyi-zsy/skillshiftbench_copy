@@ -25,9 +25,14 @@ export WORDPRESS_V2=http://localhost:8000
 ```
 
 **`WORDPRESS_V1` and `WORDPRESS_V2` pointing at the same URL is correct, not a
-typo.** WordPress's contextual shift is a theme swap on a single instance
-(`drift_manager.sh drift twentytwentyfour`), not a second deployment. For the
-same reason WordPress ships one task file rather than a v1/v2 pair.
+typo.** WordPress's contextual shift is a theme swap on a single instance, not a
+second deployment. For the same reason WordPress ships one task file rather than
+a v1/v2 pair. Only one context is live at a time:
+
+```bash
+skillshift-envs/scripts/wordpress_theme.sh --version v2   # switch to the target
+skillshift-envs/scripts/wordpress_theme.sh --show         # which one is live
+```
 
 Check what is reachable:
 
@@ -52,17 +57,32 @@ harness variables in one consistent step:
 The paper defines no cell with both shifts active; asking for one is an error
 rather than a silently accepted configuration.
 
-## Getting the images
-
-Pre-built images with the data already baked in are the intended path, so that
-nobody has to run a restore by hand:
+## Bringing one up
 
 ```bash
 cd skillshift-envs
-./setup.sh --site gitlab --version v1     # pulls, starts, polls until ready
+./setup.sh --site gitlab --condition src      # pulls, starts, polls until ready
+./setup.sh --site gitlab --condition src --dry-run   # or just print the plan
 ```
 
-The Hugging Face backups remain available as a fallback (`./setup.sh --from-hf`):
+`--condition` is the primary spelling because it is what the paper and the rest
+of the CLI use; `--version v1` / `--version v2` are accepted as synonyms, and
+giving both is an error if they disagree. From a checkout of this repository
+with `skillshift-envs` beside it, `skillshift env up --site gitlab --condition
+src` runs the same script.
+
+`setup.sh` also checks for host port collisions before starting anything, and
+warns when a leftover Docker volume would mask the data in a freshly pulled
+image.
+
+**The pre-built images are not published yet.** Until they are, use `--from-hf`,
+which downloads the backup and reconstructs the environment locally:
+
+```bash
+./setup.sh --site gitlab --condition src --from-hf
+```
+
+The Hugging Face backups:
 
 | File | Environment |
 | --- | --- |
@@ -79,6 +99,41 @@ Magento 1.9 needs a hosts entry:
 ```bash
 echo "127.0.0.1 dockerized-magento.local" | sudo tee -a /etc/hosts
 ```
+
+## Health and version checks
+
+Being reachable and being *the right environment* are two different claims, and
+both are checked. `skillshift env status` probes the URL and then defers to
+`skillshift-envs/scripts/healthcheck.sh` for the version, so there is one set of
+criteria rather than two that can drift:
+
+| Environment | Ready when | Version read from |
+| --- | --- | --- |
+| GitLab 12 / 16 | the sign-in page answers **and** `gitlab-ctl status` shows nothing down | `/opt/gitlab/embedded/service/gitlab-rails/VERSION` |
+| Magento 1.9 | `/admin` answers | `Mage::getVersionInfo()` |
+| Magento 2.4 | `/admin` answers | `bin/magento --version` |
+| WordPress | the site answers | `wp core version`, and the active theme |
+
+A version mismatch is reported as `WRONG VERSION` and counts the environment as
+not ready. Results from GitLab 15 are not results from this benchmark, and the
+failure needs to be loud rather than buried in a footnote.
+
+Without a `skillshift-envs` checkout the status line says
+`version not checked` rather than claiming a version it has not verified.
+
+## Ports
+
+| Environment | Host ports |
+| --- | --- |
+| GitLab 12 | 8080, 8443, 2222 |
+| GitLab 16 | 8081, 8444, 2223 |
+| Magento 1.9 | 80, 443, 3307, 8083 (phpMyAdmin) |
+| Magento 2.4 | 7780 |
+| WordPress | 8000 |
+
+Upstream's dockerized-magento publishes phpMyAdmin on 8080, which collides with
+GitLab 12; `skillshift-envs` moves it to 8083 so both source-context sites can
+run at once.
 
 ## Notes
 

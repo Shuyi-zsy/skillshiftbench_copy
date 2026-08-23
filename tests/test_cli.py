@@ -1,10 +1,13 @@
 """The `skillshift` command line."""
 
 import json
+import subprocess
+import urllib.request
 
 import pytest
 
 from skillshift import cli
+from skillshift.errors import SkillShiftError
 from tests import fixtures
 
 
@@ -12,6 +15,25 @@ def run(argv, capsys):
     code = cli.main(argv)
     captured = capsys.readouterr()
     return code, captured.out + captured.err
+
+
+class _FakeResponse:
+    def __init__(self, status):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+def _fake_urlopen(status):
+    def urlopen(url, timeout=None):
+        return _FakeResponse(status)
+
+    return urlopen
+
 
 
 class TestTopLevel:
@@ -168,7 +190,152 @@ class TestEnv:
         code, out = run(["env", "status", "--no-probe"], capsys)
         assert "http://localhost:8080" in out
 
-    def test_up_points_at_the_environments_repository(self, capsys):
+    def test_up_points_at_the_environments_repository_when_absent(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "_find_envs_repo", lambda: None)
+
         code, out = run(["env", "up", "--site", "gitlab", "--condition", "src"], capsys)
+
         assert code == 2
         assert "skillshift-envs" in out
+        assert "--site gitlab --condition src" in out
+
+    def test_up_drives_the_setup_script_when_present(self, capsys, monkeypatch, tmp_path):
+        setup = tmp_path / "setup.sh"
+        setup.write_text("#!/bin/sh\nexit 0\n")
+        monkeypatch.setattr(cli, "_find_envs_repo", lambda: tmp_path)
+        seen = {}
+
+        def fake_run(command, check=False):
+            seen["command"] = command
+            return subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        code, out = run(["env", "up", "--site", "wordpress", "--condition", "tgt-perc"], capsys)
+
+        assert code == 0
+        assert seen["command"] == [
+            str(setup),
+            "--site",
+            "wordpress",
+            "--condition",
+            "tgt-perc",
+        ]
+        assert "setup.sh" in out
+
+    def test_up_forwards_from_hf_and_dry_run(self, monkeypatch, capsys, tmp_path):
+        (tmp_path / "setup.sh").write_text("#!/bin/sh\nexit 0\n")
+        monkeypatch.setattr(cli, "_find_envs_repo", lambda: tmp_path)
+        seen = {}
+
+        def fake_run(command, check=False):
+            seen["command"] = command
+            return subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        run(["env", "up", "--site", "gitlab", "--condition", "src", "--from-hf", "--dry-run"], capsys)
+
+        assert "--from-hf" in seen["command"]
+        assert "--dry-run" in seen["command"]
+
+    def test_up_reports_the_setup_scripts_exit_code(self, monkeypatch, capsys, tmp_path):
+        # A failed provisioning must not look like a success to a caller
+        # scripting several environments in a row.
+        (tmp_path / "setup.sh").write_text("#!/bin/sh\nexit 1\n")
+        monkeypatch.setattr(cli, "_find_envs_repo", lambda: tmp_path)
+        monkeypatch.setattr(
+            subprocess, "run", lambda command, check=False: subprocess.CompletedProcess(command, 3)
+        )
+
+        code, _ = run(["env", "up", "--site", "magento", "--condition", "tgt"], capsys)
+
+        assert code == 3
+
+
+class TestEnvVersionProbe:
+    """`env status` reports the version, using skillshift-envs' own criteria."""
+
+    def test_a_reachable_site_reports_http_status_and_version(self, monkeypatch):
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(200))
+        monkeypatch.setattr(cli, "_probe_version", lambda environment: ", version OK")
+
+        assert cli._probe("http://localhost:8080", "gitlab-v12") == "ready (HTTP 200), version OK"
+
+    def test_an_unreachable_site_is_not_asked_for_its_version(self, monkeypatch):
+        def refuse(*args, **kwargs):
+            raise OSError("connection refused")
+
+        monkeypatch.setattr(urllib.request, "urlopen", refuse)
+        monkeypatch.setattr(
+            cli, "_probe_version", lambda environment: pytest.fail("must not be called")
+        )
+
+        assert cli._probe("http://localhost:8080", "gitlab-v12").startswith("UNREACHABLE")
+
+    def test_without_an_environment_the_probe_stays_http_only(self, monkeypatch):
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(302))
+        monkeypatch.setattr(
+            cli, "_probe_version", lambda environment: pytest.fail("must not be called")
+        )
+
+        assert cli._probe("http://localhost:8000") == "ready (HTTP 302)"
+
+    def test_wrong_version_is_surfaced_and_counted_as_not_ready(self, capsys, monkeypatch):
+        monkeypatch.setenv("GITLAB_V1", "http://localhost:8080")
+        for name in ("GITLAB_V2", "SHOPPING_ADMIN_V1", "SHOPPING_ADMIN_V2",
+                     "WORDPRESS_V1", "WORDPRESS_V2"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr(cli, "_probe", lambda url, environment=None: "ready (HTTP 200), WRONG VERSION")
+
+        code, out = run(["env", "status"], capsys)
+
+        assert "WRONG VERSION" in out
+        assert code == 1, "a wrong version must not count as a ready environment"
+
+    def test_every_site_and_version_maps_to_an_environment(self):
+        # These names are the keys of skillshift-envs/DIGESTS.json, which
+        # receipt.schema.json freezes.
+        assert cli._ENVIRONMENT_NAMES[("gitlab", "v1")] == "gitlab-v12"
+        assert cli._ENVIRONMENT_NAMES[("gitlab", "v2")] == "gitlab-v16"
+        assert cli._ENVIRONMENT_NAMES[("magento", "v1")] == "magento-v19"
+        assert cli._ENVIRONMENT_NAMES[("magento", "v2")] == "magento-v24"
+        assert cli._ENVIRONMENT_NAMES[("wordpress", "v1")] == "wordpress"
+        assert cli._ENVIRONMENT_NAMES[("wordpress", "v2")] == "wordpress"
+
+    def test_an_explicit_but_wrong_envs_home_is_an_error_not_a_fallback(self, monkeypatch, tmp_path):
+        # Silently using a different checkout would provision the wrong thing
+        # while appearing to obey.
+        monkeypatch.setenv("SKILLSHIFT_ENVS_HOME", str(tmp_path / "absent"))
+        with pytest.raises(SkillShiftError, match="SKILLSHIFT_ENVS_HOME"):
+            cli._find_envs_repo()
+
+    def test_an_explicit_envs_home_is_used_verbatim(self, monkeypatch, tmp_path):
+        (tmp_path / "setup.sh").write_text("#!/bin/sh\n")
+        monkeypatch.setenv("SKILLSHIFT_ENVS_HOME", str(tmp_path))
+        assert cli._find_envs_repo() == tmp_path
+
+    def test_without_an_envs_checkout_the_version_is_not_claimed(self, monkeypatch):
+        monkeypatch.setattr(cli, "_find_envs_repo", lambda: None)
+        assert cli._probe_version("gitlab-v12") == ", version not checked (no skillshift-envs checkout)"
+
+    def test_healthcheck_exit_codes_are_translated(self, monkeypatch, tmp_path):
+        healthcheck = tmp_path / "scripts" / "healthcheck.sh"
+        healthcheck.parent.mkdir(parents=True)
+        healthcheck.write_text("#!/bin/sh\nexit 0\n")
+        monkeypatch.setattr(cli, "_find_envs_repo", lambda: tmp_path)
+
+        for code, expected in [
+            (0, ", version OK"),
+            (2, ", WRONG VERSION"),
+            (1, ", serving but the container is not ready"),
+            (3, ", version not checked"),
+        ]:
+            monkeypatch.setattr(
+                subprocess,
+                "run",
+                lambda command, capture_output=False, timeout=None, check=False, _code=code: (
+                    subprocess.CompletedProcess(command, _code)
+                ),
+            )
+            assert cli._probe_version("gitlab-v12") == expected

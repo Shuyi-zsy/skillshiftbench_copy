@@ -1,0 +1,113 @@
+name: End-to-end regression
+
+# What this defends against: a refactor of ours quietly breaking the harness.
+# The `--condition` abstraction, the task-id rename and the dependency split all
+# touch code that unit tests cannot fully cover, because the thing that breaks is
+# the interaction with a real browser and a real website.
+#
+# MANUAL ONLY, ON PURPOSE. The pre-built environment images are not published
+# yet (Phase 2B), so a nightly schedule would do nothing but fail every night
+# and train everyone to ignore it. Add the `schedule:` block below once
+# skillshift-envs/DIGESTS.json holds real digests:
+#
+#   schedule:
+#     - cron: "0 4 * * *"
+
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: Site to exercise
+        required: true
+        type: choice
+        options: [gitlab, wordpress, magento]
+        default: gitlab
+      condition:
+        description: Condition to exercise
+        required: true
+        type: choice
+        options: [src, src-perc, src-exec, tgt, tgt-perc, tgt-exec]
+        default: src
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out skillshift-envs beside this repository
+        uses: actions/checkout@v4
+        with:
+          repository: SkillShift-Bench/skillshift-envs
+          path: skillshift-envs
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install with the browser stack
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[run,dev]"
+          python -m playwright install --with-deps chromium
+
+      - name: Bring up the environment
+        run: |
+          skillshift env up --site "${{ inputs.site }}" --condition "${{ inputs.condition }}"
+
+      - name: Point the harness at it
+        run: |
+          set -euo pipefail
+          # setup.sh prints the export line; --list gives the same mapping in a
+          # form that is easy to consume.
+          skillshift-envs/setup.sh --site "${{ inputs.site }}" \
+            --condition "${{ inputs.condition }}" --dry-run \
+            | grep '^ *export ' | sed 's/^ *export //' >> "$GITHUB_ENV"
+
+      - name: Environments are reachable and the right version
+        run: skillshift env status
+
+      - name: Run three tasks with the reference agent
+        env:
+          my_api_key: ${{ secrets.MODEL_API_KEY }}
+          my_base_url: ${{ secrets.MODEL_BASE_URL }}
+          my_model: ${{ secrets.MODEL_ID }}
+        run: |
+          skillshift run --agent reference \
+            --site "${{ inputs.site }}" --condition "${{ inputs.condition }}" \
+            --tasks $(python - <<'PY'
+          from skillshift import registry
+          reg = registry.load_registry()
+          version = "v1" if "${{ inputs.condition }}".startswith("src") else "v2"
+          tasks = reg.for_site_version("${{ inputs.site }}", version)[:3]
+          print(" ".join(task.task_id for task in tasks))
+          PY
+          ) \
+            --out runs/e2e
+
+      - name: Compare against the published reference range
+        run: |
+          set -euo pipefail
+          if [ ! -d data/reference_results ]; then
+            echo "::warning::data/reference_results is not published yet;"
+            echo "::warning::this run only proves the harness completes, not that"
+            echo "::warning::it produces the right numbers."
+            exit 0
+          fi
+          skillshift calibrate
+
+      # Trajectories and per-task judgements must never leave the runner:
+      # SkillShift-Bench publishes aggregate numbers only.
+      - name: Confirm nothing private is left behind
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf runs/
+          echo "run directory removed"

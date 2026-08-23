@@ -28,6 +28,8 @@ EXIT_USAGE = 2
 
 DEFAULT_MAX_STEPS = 10
 PROBE_TIMEOUT_SECONDS = 3
+# One `docker exec` plus a version comparison; not a boot wait.
+VERSION_CHECK_TIMEOUT_SECONDS = 30
 
 
 def _load_json(path: Path, what: str) -> dict:
@@ -54,18 +56,104 @@ def _site_urls() -> list[tuple[str, str, str | None]]:
     return rows
 
 
-def _probe(url: str) -> str:
+#: (site, version) -> the environment name used by skillshift-envs, which is
+#: also the key under which its image digest is recorded in DIGESTS.json.
+#: WordPress has one deployment for both contexts.
+_ENVIRONMENT_NAMES: dict[tuple[str, str], str] = {
+    ("gitlab", "v1"): "gitlab-v12",
+    ("gitlab", "v2"): "gitlab-v16",
+    ("magento", "v1"): "magento-v19",
+    ("magento", "v2"): "magento-v24",
+    ("wordpress", "v1"): "wordpress",
+    ("wordpress", "v2"): "wordpress",
+}
+
+
+def _find_envs_repo() -> Path | None:
+    """Locate a skillshift-envs checkout, or return None.
+
+    Looked for in `$SKILLSHIFT_ENVS_HOME` first, then beside this repository,
+    then inside it, then in the working directory -- the four places a checkout
+    following the documented layout actually ends up.
+    """
+    import os
+
+    configured = os.environ.get("SKILLSHIFT_ENVS_HOME")
+    if configured:
+        # An explicit setting that does not resolve is a mistake worth naming.
+        # Falling back to a different checkout would provision the wrong thing
+        # while looking like it obeyed.
+        if not (Path(configured) / "setup.sh").is_file():
+            raise SkillShiftError(
+                f"SKILLSHIFT_ENVS_HOME points at {configured}, which has no setup.sh. "
+                "Unset it to search the usual locations."
+            )
+        return Path(configured)
+
+    for candidate in (
+        paths.REPO_ROOT.parent / "skillshift-envs",
+        paths.REPO_ROOT / "skillshift-envs",
+        Path.cwd() / "skillshift-envs",
+    ):
+        if (candidate / "setup.sh").is_file():
+            return candidate
+    return None
+
+
+def _probe_version(environment: str) -> str:
+    """Ask skillshift-envs whether the container is the expected version.
+
+    The criteria live in `scripts/healthcheck.sh` and are invoked rather than
+    reimplemented: a second copy in Python would drift, and "the environment
+    looked healthy" is exactly the failure this check exists to catch.
+    """
+    import subprocess
+
+    envs_repo = _find_envs_repo()
+    if envs_repo is None:
+        return ", version not checked (no skillshift-envs checkout)"
+
+    healthcheck = envs_repo / "scripts" / "healthcheck.sh"
+    if not healthcheck.is_file():
+        return ", version not checked (healthcheck.sh missing)"
+
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [str(healthcheck), "--env", environment, "--once"],
+            capture_output=True,
+            timeout=VERSION_CHECK_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ", version not checked (could not run healthcheck.sh)"
+
+    # Exit codes are healthcheck.sh's contract: 0 ok, 1 not ready, 2 wrong
+    # version, 3 usage error.
+    if completed.returncode == 0:
+        return ", version OK"
+    if completed.returncode == 2:
+        return ", WRONG VERSION"
+    if completed.returncode == 1:
+        return ", serving but the container is not ready"
+    return ", version not checked"
+
+
+def _probe(url: str, environment: str | None = None) -> str:
     import urllib.error
     import urllib.request
 
     try:
         with urllib.request.urlopen(url, timeout=PROBE_TIMEOUT_SECONDS) as response:
-            return f"ready (HTTP {response.status})"
+            status = f"ready (HTTP {response.status})"
     except urllib.error.HTTPError as exc:
         # A 4xx from a login page still means the server is up.
-        return f"ready (HTTP {exc.code})"
+        status = f"ready (HTTP {exc.code})"
     except Exception as exc:  # noqa: BLE001 - reported to the user verbatim
         return f"UNREACHABLE ({type(exc).__name__})"
+
+    if environment is None:
+        return status
+    return status + _probe_version(environment)
 
 
 def cmd_env_status(args: argparse.Namespace) -> int:
@@ -77,8 +165,9 @@ def cmd_env_status(args: argparse.Namespace) -> int:
             print(f"  {site:<10} {version}  not configured  (set {variable})")
             missing += 1
             continue
-        status = "not probed" if args.no_probe else _probe(url)
-        if "UNREACHABLE" in status:
+        environment = _ENVIRONMENT_NAMES.get((site, version))
+        status = "not probed" if args.no_probe else _probe(url, environment)
+        if "UNREACHABLE" in status or "WRONG VERSION" in status:
             missing += 1
         print(f"  {site:<10} {version}  {url:<40} {status}")
 
@@ -93,14 +182,47 @@ def cmd_env_status(args: argparse.Namespace) -> int:
 
 
 def cmd_env_up(args: argparse.Namespace) -> int:
-    print(
-        "Environment provisioning lives in the companion repository:\n"
-        "    https://github.com/SkillShift-Bench/skillshift-envs\n\n"
-        f"    ./setup.sh --site {args.site} --condition {args.condition}\n\n"
-        "This command will drive it once the pre-built images are published; until\n"
-        "then, follow docs/environments.md and set the *_V1 / *_V2 URL variables."
-    )
-    return EXIT_USAGE
+    """Drive skillshift-envs/setup.sh for one cell.
+
+    The provisioning itself deliberately lives in the other repository: it is
+    Docker and shell, it is large, and it changes on a different schedule from
+    the harness. This is a thin front door to it.
+    """
+    import subprocess
+
+    envs_repo = _find_envs_repo()
+    if envs_repo is None:
+        print(
+            "Environment provisioning lives in the companion repository:\n"
+            "    https://github.com/SkillShift-Bench/skillshift-envs\n\n"
+            "    git clone https://github.com/SkillShift-Bench/skillshift-envs\n"
+            f"    cd skillshift-envs && ./setup.sh --site {args.site} "
+            f"--condition {args.condition}\n\n"
+            "This command drives that script once a checkout is available. It is\n"
+            "looked for in $SKILLSHIFT_ENVS_HOME, beside this repository, inside\n"
+            "it, and in the current directory.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    command = [
+        str(envs_repo / "setup.sh"),
+        "--site",
+        args.site,
+        "--condition",
+        args.condition,
+    ]
+    if args.from_hf:
+        command.append("--from-hf")
+    if args.dry_run:
+        command.append("--dry-run")
+
+    print(f"running {' '.join(command)}\n", flush=True)
+    try:
+        completed = subprocess.run(command, check=False)  # noqa: S603 - fixed argv
+    except OSError as exc:
+        raise SkillShiftError(f"could not run {command[0]}: {exc}") from exc
+    return completed.returncode
 
 
 # --------------------------------------------------------------------------
@@ -268,6 +390,18 @@ def build_parser() -> argparse.ArgumentParser:
     up = env_sub.add_parser("up", help="bring up one environment")
     up.add_argument("--site", required=True, choices=list(sites.SITE_NAMES))
     up.add_argument("--condition", required=True, choices=list(conditions.CONDITIONS))
+    up.add_argument(
+        "--from-hf",
+        action="store_true",
+        dest="from_hf",
+        help="rebuild from the Hugging Face backup instead of the pre-built image",
+    )
+    up.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="print the commands setup.sh would run, without running them",
+    )
     up.set_defaults(func=cmd_env_up)
 
     calibrate = sub.add_parser("calibrate", help="check your setup against the reference anchor")
