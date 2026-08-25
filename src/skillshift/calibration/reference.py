@@ -82,6 +82,10 @@ class ReferenceResults:
     harness_version: str | None
     sigma_method: str | None
     threshold_sigma: float
+    #: Step budget the sweep was measured at.  AS is a count of steps, so an
+    #: anchor is only comparable with a local run made at the same budget.
+    #: `None` for an anchor that predates the field, which grades unguarded.
+    max_steps: int | None
     gated_metrics: tuple[str, ...]
     _cells: Mapping[tuple[str, str], ReferenceCell]
 
@@ -199,6 +203,30 @@ def _read_cells(payload: Mapping, path: Path) -> dict[tuple[str, str], Reference
     return cells
 
 
+def _read_max_steps(raw: object, *, path: Path) -> int | None:
+    """The step budget, if the anchor records one.
+
+    Absent is allowed -- an anchor written before the field existed grades
+    without the guard.  Present but not a positive whole number is not: it
+    would silently disable a check that exists to stop AS being compared
+    across two different budgets.
+    """
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise CalibrationError(
+            f"Reference results at {path} record max_steps={raw!r}, which is not a number."
+        ) from None
+    if value < 1:
+        raise CalibrationError(
+            f"Reference results at {path} record max_steps={value}, which cannot have "
+            f"produced any run."
+        )
+    return value
+
+
 def load_reference_results(path: Path | str | None = None) -> ReferenceResults:
     """Load and validate the anchor.  Absent numbers are fine; a broken shape is not."""
     path = Path(path) if path is not None else default_path()
@@ -217,6 +245,7 @@ def load_reference_results(path: Path | str | None = None) -> ReferenceResults:
         harness_version=payload.get("harness_version"),
         sigma_method=payload.get("sigma_method"),
         threshold_sigma=float(payload.get("threshold_sigma") or 3.0),
+        max_steps=_read_max_steps(payload.get("max_steps"), path=path),
         gated_metrics=tuple(str(name) for name in gated),
         _cells=_read_cells(payload, path),
     )

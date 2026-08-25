@@ -232,3 +232,15 @@ def test_the_written_anchor_keeps_all_eighteen_cells(anchor):
 def test_the_written_anchor_keeps_the_pending_notes_out(anchor):
     """`status_note` explains an emptiness that no longer applies."""
     assert "status_note" not in anchor
+
+
+def test_the_written_anchor_records_the_step_budget(anchor):
+    """AS is a step count; without the budget it was measured at it grades nothing."""
+    assert anchor["max_steps"] == 10
+
+
+def test_the_step_budget_is_settable():
+    built = builder.build_anchor(
+        full_sweep(), model="m", harness_version="0.1.0", max_steps=25
+    )
+    assert built["max_steps"] == 25

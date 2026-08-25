@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from skillshift import __version__, paths  # noqa: E402
 from skillshift.calibration import reference as reference_mod  # noqa: E402
 from skillshift.calibration import subset  # noqa: E402
+from skillshift.cli import DEFAULT_MAX_STEPS  # noqa: E402
 from skillshift.conditions import CONDITIONS  # noqa: E402
 from skillshift.eval.metrics import METRIC_NAMES, compute_cell  # noqa: E402
 from skillshift.eval.records import TaskRecord, read_jsonl  # noqa: E402
@@ -235,6 +236,7 @@ def build_anchor(
     measured_at: str | None = None,
     env_digests: Mapping[str, str | None] | None = None,
     threshold_sigma: float = 3.0,
+    max_steps: int = DEFAULT_MAX_STEPS,
 ) -> dict:
     """The anchor payload, or an exception explaining why there is not one."""
     grouped = _group(records)
@@ -265,6 +267,7 @@ def build_anchor(
         "sigma_method": SIGMA_METHOD,
         "sigma_method_note": SIGMA_METHOD_NOTE,
         "threshold_sigma": threshold_sigma,
+        "max_steps": max_steps,
         "gated_metrics": list(GATED_METRICS),
         "gated_metrics_note": GATED_METRICS_NOTE,
         "cells": {
@@ -315,6 +318,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--digests", default=None, help="path to skillshift-envs/DIGESTS.json")
     parser.add_argument("--threshold", type=float, default=3.0, dest="threshold_sigma")
     parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=DEFAULT_MAX_STEPS,
+        dest="max_steps",
+        help="step budget the sweep was run at; recorded so calibrate can refuse a mismatch",
+    )
+    parser.add_argument(
         "--out",
         default=str(paths.REFERENCE_RESULTS_DIR / reference_mod.REFERENCE_RESULTS_FILENAME),
     )
@@ -332,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             measured_at=args.measured_at,
             env_digests=_load_digests(Path(args.digests) if args.digests else None),
             threshold_sigma=args.threshold_sigma,
+            max_steps=args.max_steps,
         )
     except (IncompleteSweep, DegenerateTolerance) as exc:
         print(f"\nrefusing to write an anchor:\n{exc}", file=sys.stderr)

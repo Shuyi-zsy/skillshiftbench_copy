@@ -53,6 +53,7 @@ One file per anchor agent. Currently: `reference-react.json`.
   "calibration_set": { "rule": "uniform-by-index-v1", "n_families": 30, "n_runs": 180 },
   "sigma_method": null,            // how `sigma` below was produced
   "threshold_sigma": 3.0,          // deviation beyond which a cell fails
+  "max_steps": 10,                 // step budget the sweep ran at; calibrate must match it
   "gated_metrics": ["SR", "AS"],   // which metrics can fail a run
   "cells": {
     "gitlab": {
@@ -114,6 +115,10 @@ Only **SR** and **AS**.
 2. `skillshift run --agent reference` over the calibration subset under all six
    conditions, at temperature 0.
 3. Write `value` and `sigma` per cell, set `status` to `"published"`, and record
-   `model`, `harness_version`, `measured_at`, `env_digests`, and `sigma_method`.
+   `model`, `harness_version`, `measured_at`, `env_digests`, `sigma_method` and
+   `max_steps`. `scripts/build_reference_anchor.py` does all of that from the
+   sweep's `per_task.jsonl` files, and refuses to write anything from a sweep
+   that is missing a cell, sits at a wrong denominator, contains a crashed
+   task, or yields a gated metric with no spread.
 4. `skillshift calibrate` then grades against it; nightly regression (§7.3) uses
    the same file.

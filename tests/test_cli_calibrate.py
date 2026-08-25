@@ -191,3 +191,61 @@ class TestAgainstAPublishedAnchor:
             capsys,
         )
         assert code == expected_code
+
+
+class TestStepBudgetGuard:
+    """A budget mismatch is exit 2 -- the check could not be made, not a finding."""
+
+    def _anchor(self, tmp_path, max_steps):
+        path = tmp_path / "anchor.json"
+        path.write_text(json.dumps(anchor_payload(max_steps=max_steps)), encoding="utf-8")
+        return path
+
+    def test_a_differing_budget_refuses_to_grade(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "_run_pairs", fake_records(sr_percent=20.0, avg_steps=8.0))
+        code, out = run(
+            [
+                "calibrate",
+                "--reference", str(self._anchor(tmp_path, 10)),
+                "--max-steps", "20",
+                "--out", str(tmp_path / "runs"),
+            ],
+            capsys,
+        )
+        assert code == 2
+        assert "10" in out and "20" in out
+
+    def test_a_differing_budget_does_not_spend_a_single_run(self, tmp_path, capsys, monkeypatch):
+        called = []
+        monkeypatch.setattr(cli, "_run_pairs", lambda *a, **k: called.append(1) or ())
+        run(
+            [
+                "calibrate",
+                "--reference", str(self._anchor(tmp_path, 10)),
+                "--max-steps", "20",
+                "--out", str(tmp_path / "runs"),
+            ],
+            capsys,
+        )
+        assert called == []
+
+    def test_a_matching_budget_grades_normally(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "_run_pairs", fake_records(sr_percent=20.0, avg_steps=8.0))
+        code, _ = run(
+            [
+                "calibrate",
+                "--reference", str(self._anchor(tmp_path, 10)),
+                "--max-steps", "10",
+                "--out", str(tmp_path / "runs"),
+            ],
+            capsys,
+        )
+        assert code == 0
+
+    def test_an_anchor_without_a_budget_still_grades(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "_run_pairs", fake_records(sr_percent=20.0, avg_steps=8.0))
+        code, _ = run(
+            ["calibrate", "--reference", str(self._anchor(tmp_path, None)), "--out", str(tmp_path / "runs")],
+            capsys,
+        )
+        assert code == 0

@@ -35,7 +35,7 @@ def cell_payload(n, *, sr=None, avg_steps=None, sigma=None):
     }
 
 
-def anchor_payload(*, status="published", sr=20.0, avg_steps=8.0, sigma=2.0):
+def anchor_payload(*, status="published", sr=20.0, avg_steps=8.0, sigma=2.0, max_steps=None):
     return {
         "schema_version": "1.0",
         "status": status,
@@ -44,6 +44,7 @@ def anchor_payload(*, status="published", sr=20.0, avg_steps=8.0, sigma=2.0):
         "harness_version": "0.1.0" if status == "published" else None,
         "sigma_method": "within-cell-standard-error" if status == "published" else None,
         "threshold_sigma": 3.0,
+        "max_steps": max_steps,
         "gated_metrics": ["SR", "AS"],
         "calibration_set": {"rule": subset.SAMPLING_RULE_ID, "n_families": 30},
         "cells": {
@@ -219,3 +220,29 @@ class TestCompare:
         )
         with pytest.raises(CalibrationError):
             compare_mod.compare([stray, stray], anchor)
+
+
+class TestStepBudget:
+    """AS is a count of steps, so it is only comparable at one step budget.
+
+    An anchor measured at ten steps and a local run made at twenty produce
+    different AS for identical behaviour, and the difference would be reported
+    as a deviating environment.  The budget therefore has to travel with the
+    anchor.
+    """
+
+    def test_the_budget_is_read_back(self, tmp_path):
+        path = tmp_path / "anchor.json"
+        path.write_text(json.dumps(anchor_payload(max_steps=10)), encoding="utf-8")
+        assert reference_mod.load_reference_results(path).max_steps == 10
+
+    def test_an_anchor_without_one_reads_as_none(self, tmp_path):
+        path = tmp_path / "anchor.json"
+        path.write_text(json.dumps(anchor_payload()), encoding="utf-8")
+        assert reference_mod.load_reference_results(path).max_steps is None
+
+    def test_a_nonsense_budget_is_rejected(self, tmp_path):
+        path = tmp_path / "anchor.json"
+        path.write_text(json.dumps(anchor_payload(max_steps=0)), encoding="utf-8")
+        with pytest.raises(CalibrationError):
+            reference_mod.load_reference_results(path)

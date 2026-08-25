@@ -28,10 +28,19 @@ published anchor.
 | ---: | --- |
 | `0` | every gated value is within tolerance — your environment matches the anchor |
 | `1` | at least one gated value deviates beyond the threshold — something is different |
-| `2` | the check could not be made: the subset is missing, or the anchor is unpublished |
+| `2` | the check could not be made: the subset is missing, the anchor is unpublished, or your step budget is not the one the anchor was measured at |
 
 `1` and `2` are deliberately distinct. `1` is a finding; `2` is the absence of
 one, and a script must not treat them the same.
+
+### The step budget has to match
+
+AS is a count of steps, so the same agent behaving identically scores a
+different AS under a different `--max-steps`. The anchor records the budget it
+was measured at, and `calibrate` refuses (exit `2`) rather than grading across
+two of them — reporting a budget difference as a misconfigured environment
+would be a wrong answer, not a conservative one. Nothing is run when the
+budgets disagree, so a mismatch costs no API calls.
 
 ## The subset
 

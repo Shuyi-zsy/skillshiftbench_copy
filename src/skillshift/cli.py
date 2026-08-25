@@ -287,6 +287,20 @@ Until then, verify your setup with `skillshift env status` and a single task run
 See data/reference_results/README.md."""
 
 
+_BUDGET_MISMATCH_MESSAGE = """This anchor was measured at a different step budget.
+
+  anchor:   --max-steps {anchor}
+  this run: --max-steps {local}
+
+AS is a count of steps, so the same agent behaving identically scores a
+different AS under a different budget, and `calibrate` would report the
+difference as a misconfigured environment. That is a wrong answer, not a
+conservative one, so the check is refused rather than made badly.
+
+Re-run with --max-steps {anchor}, or point --reference at an anchor measured at
+{local}."""
+
+
 def _calibration_plans(calibration_set, site: str | None):
     """One plan per (site, condition), each pinning that site's family ids."""
     by_site = calibration_set.by_site()
@@ -314,7 +328,8 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     Exit codes:
         0  every gated value is within tolerance of the anchor
         1  at least one gated value deviates beyond the threshold
-        2  the check could not be made -- no subset, or the anchor is unpublished
+        2  the check could not be made -- no subset, an unpublished anchor, or a
+           step budget that does not match the one the anchor was measured at
     """
     from .calibration import deviation as deviation_mod
     from .calibration import reference as reference_mod
@@ -346,6 +361,13 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
                 anchor_path=anchor_path,
                 n_families=len(calibration_set.family_ids),
             ),
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    if anchor.max_steps is not None and int(args.max_steps) != anchor.max_steps:
+        print(
+            _BUDGET_MISMATCH_MESSAGE.format(anchor=anchor.max_steps, local=args.max_steps),
             file=sys.stderr,
         )
         return EXIT_USAGE
