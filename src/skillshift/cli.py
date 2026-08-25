@@ -27,7 +27,12 @@ EXIT_FAILED_CHECKS = 1
 EXIT_USAGE = 2
 
 DEFAULT_MAX_STEPS = 10
-PROBE_TIMEOUT_SECONDS = 3
+# Generous on purpose.  `env status` is a status command, not a latency
+# benchmark: a WordPress front page rendering 516 posts, or a Magento admin on
+# a machine with five environments up, takes several seconds to answer, and a
+# three-second probe reported UNREACHABLE for sites `healthcheck.sh` passed in
+# the same second.  Overridable with --timeout.
+PROBE_TIMEOUT_SECONDS = 15
 # One `docker exec` plus a version comparison; not a boot wait.
 VERSION_CHECK_TIMEOUT_SECONDS = 30
 
@@ -130,12 +135,18 @@ def _probe_version(environment: str) -> str:
     return ", version not checked"
 
 
-def _probe(url: str, environment: str | None = None) -> str:
-    import urllib.error
+def _open_url(url: str, timeout: float):
+    """Seam for the tests: the one place the probe touches the network."""
     import urllib.request
 
+    return urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 - user-supplied site URL
+
+
+def _probe(url: str, environment: str | None = None, timeout: float | None = None) -> str:
+    import urllib.error
+
     try:
-        with urllib.request.urlopen(url, timeout=PROBE_TIMEOUT_SECONDS) as response:
+        with _open_url(url, timeout if timeout is not None else PROBE_TIMEOUT_SECONDS) as response:
             status = f"ready (HTTP {response.status})"
     except urllib.error.HTTPError as exc:
         # A 4xx from a login page still means the server is up.
@@ -158,7 +169,11 @@ def cmd_env_status(args: argparse.Namespace) -> int:
             missing += 1
             continue
         environment = _ENVIRONMENT_NAMES.get((site, version))
-        status = "not probed" if args.no_probe else _probe(url, environment)
+        status = (
+            "not probed"
+            if args.no_probe
+            else _probe(url, environment, timeout=getattr(args, "timeout", None))
+        )
         if "UNREACHABLE" in status or "WRONG VERSION" in status:
             missing += 1
         print(f"  {site:<10} {version}  {url:<40} {status}")
@@ -580,6 +595,12 @@ def build_parser() -> argparse.ArgumentParser:
     env = sub.add_parser("env", help="inspect or provision the benchmark websites")
     env_sub = env.add_subparsers(dest="env_command")
     status = env_sub.add_parser("status", help="show which sites and versions are reachable")
+    status.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help=f"seconds to wait for each site (default: {PROBE_TIMEOUT_SECONDS})",
+    )
     status.add_argument("--no-probe", action="store_true", help="do not make HTTP requests")
     status.set_defaults(func=cmd_env_status)
     up = env_sub.add_parser("up", help="bring up one environment")

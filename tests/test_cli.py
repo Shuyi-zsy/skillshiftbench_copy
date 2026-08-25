@@ -286,7 +286,9 @@ class TestEnvVersionProbe:
         for name in ("GITLAB_V2", "SHOPPING_ADMIN_V1", "SHOPPING_ADMIN_V2",
                      "WORDPRESS_V1", "WORDPRESS_V2"):
             monkeypatch.delenv(name, raising=False)
-        monkeypatch.setattr(cli, "_probe", lambda url, environment=None: "ready (HTTP 200), WRONG VERSION")
+        monkeypatch.setattr(
+            cli, "_probe", lambda url, environment=None, timeout=None: "ready (HTTP 200), WRONG VERSION"
+        )
 
         code, out = run(["env", "status"], capsys)
 
@@ -339,3 +341,41 @@ class TestEnvVersionProbe:
                 ),
             )
             assert cli._probe_version("gitlab-v12") == expected
+
+
+class TestEnvStatusProbeTimeout:
+    """A three-second probe calls a healthy site unreachable.
+
+    Measured on the build machine with all five environments up: the WordPress
+    front page renders 516 posts in ~2.8s, so `env status` reported
+    `UNREACHABLE (TimeoutError)` for a site that `healthcheck.sh` passed in the
+    same second, with HTTP 200 and the right theme. Nothing was wrong except
+    the timeout, and the message sends a first-time user hunting a fault that
+    does not exist.
+    """
+
+    def test_the_default_is_not_tighter_than_a_warm_php_page(self):
+        assert cli.PROBE_TIMEOUT_SECONDS >= 10, (
+            "a loaded Magento or WordPress page takes several seconds; a probe "
+            "shorter than that reports UNREACHABLE for a healthy site"
+        )
+
+    def test_the_timeout_is_overridable(self, capsys, monkeypatch):
+        seen = {}
+
+        def fake_probe(url, timeout):
+            seen["timeout"] = timeout
+            raise TimeoutError
+
+        monkeypatch.setattr(cli, "_open_url", fake_probe)
+        monkeypatch.setenv("WORDPRESS_V1", "http://localhost:8000")
+        cli.main(["env", "status", "--timeout", "42"])
+        capsys.readouterr()
+        assert seen["timeout"] == 42
+
+    def test_a_real_timeout_is_still_reported_as_unreachable(self, monkeypatch):
+        def fake_probe(url, timeout):
+            raise TimeoutError
+
+        monkeypatch.setattr(cli, "_open_url", fake_probe)
+        assert "UNREACHABLE" in cli._probe("http://localhost:1", None)
