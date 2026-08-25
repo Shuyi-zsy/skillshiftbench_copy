@@ -1,7 +1,10 @@
 """The generic run loop, exercised against a fake environment."""
 
+import os
+
 import pytest
 
+from skillshift import runner
 from skillshift.agents.base import TaskSpec
 from skillshift.errors import SkillShiftError
 from skillshift.runner import run_task
@@ -145,3 +148,64 @@ class TestFailureHandling:
         with pytest.raises(SkillShiftError):
             run_task(task=spec(), agent=NotAnAgent(), env=env)
         assert env.actions == []
+
+
+class TestWebArenaEnvironmentVariables:
+    """The upstream `webarena` package asserts seven URLs at *import* time.
+
+    `libwebarena` -> `webarena.browser_env.env_config` raises
+    "Please setup the URLs to each site" unless REDDIT, SHOPPING,
+    SHOPPING_ADMIN, GITLAB, WIKIPEDIA, MAP and HOMEPAGE are all non-empty.
+    The paper's artifact told users to export all seven by hand, four of them
+    meaningless placeholders; the refactor dropped that from the docs and
+    nothing supplied them, so every task died at setup.
+
+    The harness already knows the URLs, so it fills them itself.
+    """
+
+    def test_all_seven_are_set_inside_the_context(self, monkeypatch):
+        for name in runner.WEBARENA_REQUIRED_VARS:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("GITLAB_V1", "http://localhost:8080")
+        monkeypatch.setenv("SHOPPING_ADMIN_V1", "http://dockerized-magento.local/admin")
+
+        with runner.condition_environment("wordpress", "src"):
+            for name in runner.WEBARENA_REQUIRED_VARS:
+                assert os.environ.get(name), f"{name} is empty; webarena asserts on it"
+
+    def test_the_two_it_actually_knows_carry_the_real_urls(self, monkeypatch):
+        monkeypatch.setenv("GITLAB_V1", "http://localhost:8080")
+        monkeypatch.setenv("GITLAB_V2", "http://localhost:8081")
+        monkeypatch.setenv("SHOPPING_ADMIN_V1", "http://dockerized-magento.local/admin")
+        monkeypatch.setenv("SHOPPING_ADMIN_V2", "http://localhost:7780/admin")
+
+        with runner.condition_environment("gitlab", "src"):
+            assert os.environ["GITLAB"] == "http://localhost:8080"
+            assert os.environ["SHOPPING_ADMIN"] == "http://dockerized-magento.local/admin"
+        with runner.condition_environment("gitlab", "tgt-exec"):
+            assert os.environ["GITLAB"] == "http://localhost:8081"
+            assert os.environ["SHOPPING_ADMIN"] == "http://localhost:7780/admin"
+
+    def test_the_four_this_benchmark_does_not_use_say_so(self, monkeypatch):
+        monkeypatch.setenv("GITLAB_V1", "http://localhost:8080")
+        monkeypatch.setenv("SHOPPING_ADMIN_V1", "http://x/admin")
+        with runner.condition_environment("wordpress", "src"):
+            for name in ("REDDIT", "WIKIPEDIA", "MAP", "HOMEPAGE"):
+                assert "skillshift" in os.environ[name], (
+                    f"{name} should be an obviously inert placeholder, not a plausible URL"
+                )
+
+    def test_the_previous_values_are_restored(self, monkeypatch):
+        monkeypatch.setenv("GITLAB", "http://someone-elses-value")
+        monkeypatch.setenv("GITLAB_V1", "http://localhost:8080")
+        monkeypatch.setenv("SHOPPING_ADMIN_V1", "http://x/admin")
+        with runner.condition_environment("wordpress", "src"):
+            pass
+        assert os.environ["GITLAB"] == "http://someone-elses-value"
+
+    def test_a_missing_site_url_does_not_crash_the_context(self, monkeypatch):
+        """`env status` reports unconfigured sites; entering a context must not raise."""
+        for name in ("GITLAB_V1", "GITLAB_V2", "SHOPPING_ADMIN_V1", "SHOPPING_ADMIN_V2"):
+            monkeypatch.delenv(name, raising=False)
+        with runner.condition_environment("wordpress", "src"):
+            assert os.environ["GITLAB"]

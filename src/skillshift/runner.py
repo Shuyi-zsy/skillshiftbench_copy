@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -88,10 +88,50 @@ def _close(env: Any) -> None:
         logger.warning("Closing the environment raised; continuing.", exc_info=True)
 
 
+#: The upstream `webarena` package asserts all seven of these at *import* time
+#: (`webarena.browser_env.env_config`), and `libwebarena` is a hard dependency
+#: of browsergym-webarena.  The paper's artifact told users to export them by
+#: hand -- four of them meaningless -- and the refactor dropped that from the
+#: docs, so every task died in `setup` with "Please setup the URLs to each
+#: site".  The harness knows the two that mean something and fills the rest.
+WEBARENA_REQUIRED_VARS: tuple[str, ...] = (
+    "REDDIT",
+    "SHOPPING",
+    "SHOPPING_ADMIN",
+    "GITLAB",
+    "WIKIPEDIA",
+    "MAP",
+    "HOMEPAGE",
+)
+
+#: Deliberately unresolvable, and named so that a value showing up in a log or
+#: a trace is recognisable as a placeholder rather than a site someone forgot
+#: to start.  SkillShift-Bench evaluates GitLab, Magento and WordPress only.
+WEBARENA_UNUSED_URL = "http://unused-by-skillshift.invalid"
+
+#: Which SkillShift environment variable backs each webarena one, per version.
+WEBARENA_SITE_SOURCES: Mapping[str, str] = {
+    "GITLAB": "GITLAB",
+    "SHOPPING_ADMIN": "SHOPPING_ADMIN",
+}
+
+
+def webarena_env(version: str) -> dict[str, str]:
+    """Values for webarena's seven variables, for one site version."""
+    values = {name: WEBARENA_UNUSED_URL for name in WEBARENA_REQUIRED_VARS}
+    for target, prefix in WEBARENA_SITE_SOURCES.items():
+        # Absent is not fatal: `skillshift env status` is the command that
+        # reports an unconfigured site, and entering the context must not be
+        # the thing that raises.
+        values[target] = os.environ.get(f"{prefix}_{version.upper()}") or WEBARENA_UNUSED_URL
+    return values
+
+
 @contextmanager
 def condition_environment(site: str, condition: str) -> Iterator[dict[str, str]]:
     """Temporarily set the environment variables for one cell, then restore."""
-    values = conditions_mod.to_env(site=site, condition=condition)
+    values = dict(conditions_mod.to_env(site=site, condition=condition))
+    values.update(webarena_env(conditions_mod.resolve(condition).site_version))
     previous = {key: os.environ.get(key) for key in values}
     os.environ.update(values)
     try:

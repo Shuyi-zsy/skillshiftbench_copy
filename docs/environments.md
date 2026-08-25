@@ -46,6 +46,15 @@ export WORDPRESS_V1=http://localhost:8000
 export WORDPRESS_V2=http://localhost:8000
 ```
 
+**These six are the only ones you set.** The `webarena` package underneath
+browsergym asserts seven more at import time — `REDDIT`, `SHOPPING`,
+`SHOPPING_ADMIN`, `GITLAB`, `WIKIPEDIA`, `MAP`, `HOMEPAGE` — and refuses to load
+without them. The harness fills those in for the duration of a run from the six
+above, and restores whatever you had afterwards; four of the seven name sites
+this benchmark does not evaluate and are set to an obviously inert
+`http://unused-by-skillshift.invalid`. You do not need to export them, and any
+values you do export are ignored while a task is running.
+
 **`WORDPRESS_V1` and `WORDPRESS_V2` pointing at the same URL is correct, not a
 typo.** WordPress's contextual shift is a theme swap on a single instance, not a
 second deployment. For the same reason WordPress ships one task file rather than
