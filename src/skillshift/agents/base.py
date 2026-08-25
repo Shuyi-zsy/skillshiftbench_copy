@@ -117,6 +117,31 @@ def _goal_text(raw: Mapping[str, Any]) -> str:
     return str(raw.get("goal", "") or "")
 
 
+def _as_index(value: Any, default: int = 0) -> int:
+    """Coerce browsergym's `active_page_index` to an int.
+
+    It arrives as a one-element numpy array (`np.asarray([pages.index(page)])`),
+    and numpy >= 2 refuses `int()` on anything with `ndim > 0`. Unwrapping by
+    length rather than importing numpy keeps the core install free of it -- the
+    array only lives in the `run` extra, but this module is imported by the
+    aggregation path too.
+
+    Anything unusable falls back to `default` instead of raising: a partial
+    observation is normal on an error page, and losing a whole task to one is
+    what this function exists to prevent.
+    """
+    if value is None:
+        return default
+    while hasattr(value, "__len__") and not isinstance(value, (str, bytes)):
+        if len(value) == 0:
+            return default
+        value = value[0]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def observation_from(raw: Mapping[str, Any], *, step: int, page: Any = None) -> Observation:
     """Translate a browsergym observation dict into an `Observation`.
 
@@ -124,7 +149,7 @@ def observation_from(raw: Mapping[str, Any], *, step: int, page: Any = None) -> 
     observation is a normal occurrence at the first step and on error pages.
     """
     urls = tuple(str(url) for url in (raw.get("open_pages_urls") or ()))
-    index = int(raw.get("active_page_index") or 0)
+    index = _as_index(raw.get("active_page_index"))
     url = urls[index] if 0 <= index < len(urls) else (urls[0] if urls else None)
 
     return Observation(

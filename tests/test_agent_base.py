@@ -152,3 +152,99 @@ class TestRoundTrip:
 
         assert agent.seen == [0, 1, 2]
         assert recorder.n_calls == 0
+
+
+class TestActivePageIndexFromNumpy:
+    """browsergym reports `active_page_index` as a one-element numpy array.
+
+    `browsergym/core/env.py` sets it to `np.asarray([pages.index(page)])`, and
+    numpy >= 2 refuses `int()` on anything with `ndim > 0`:
+    "only 0-dimensional arrays can be converted to Python scalars".
+
+    The old code was `int(raw.get("active_page_index") or 0)`, which hid the
+    problem for exactly the common case: `np.array([0])` is *falsy*, so a
+    single-tab observation fell through to the Python `0`. As soon as an agent
+    focuses a second tab the array is truthy, stays an array, and the whole
+    task dies -- measured once in 46 runs of the reference sweep, whose action
+    set advertises `new_tab()` and `tab_focus(index)`.
+    """
+
+    def one_elem_array(self, value):
+        """A stand-in with numpy >= 2 semantics, so this runs without numpy.
+
+        Sized, indexable, falsy when it holds a zero, and refusing `int()` --
+        which is precisely the combination that produced the crash.
+        """
+
+        class NdimOneArray:
+            def __init__(self, v):
+                self._v = v
+
+            def __len__(self):
+                return 1
+
+            def __getitem__(self, i):
+                return self._v
+
+            def __bool__(self):
+                return bool(self._v)
+
+            def __int__(self):
+                raise TypeError(
+                    "only 0-dimensional arrays can be converted to Python scalars"
+                )
+
+        return NdimOneArray(value)
+
+    def test_the_stand_in_really_reproduces_numpy(self):
+        """Guard the guard: a stand-in that converts cleanly would prove nothing."""
+        fake = self.one_elem_array(1)
+        with pytest.raises(TypeError):
+            int(fake)
+        assert not self.one_elem_array(0)
+
+    def test_numpy_itself_behaves_the_way_the_stand_in_claims(self):
+        np = pytest.importorskip("numpy")
+        with pytest.raises(TypeError):
+            int(np.asarray([1]))
+        assert not np.asarray([0])
+
+    def test_a_second_tab_does_not_crash_the_observation(self):
+        obs = observation_from(
+            {
+                "open_pages_urls": ["http://a/", "http://b/"],
+                "active_page_index": self.one_elem_array(1),
+            },
+            step=3,
+        )
+        assert obs.active_page_index == 1
+        assert obs.url == "http://b/"
+
+    def test_the_first_tab_still_works(self):
+        obs = observation_from(
+            {
+                "open_pages_urls": ["http://a/", "http://b/"],
+                "active_page_index": self.one_elem_array(0),
+            },
+            step=0,
+        )
+        assert obs.active_page_index == 0
+        assert obs.url == "http://a/"
+
+    def test_a_plain_int_still_works(self):
+        obs = observation_from(
+            {"open_pages_urls": ["http://a/", "http://b/"], "active_page_index": 1}, step=0
+        )
+        assert obs.active_page_index == 1
+
+    def test_a_missing_index_defaults_to_zero(self):
+        obs = observation_from({"open_pages_urls": ["http://a/"]}, step=0)
+        assert obs.active_page_index == 0
+        assert obs.url == "http://a/"
+
+    def test_an_unusable_index_defaults_rather_than_raising(self):
+        """A partial observation is normal on error pages; it must not raise."""
+        obs = observation_from(
+            {"open_pages_urls": ["http://a/"], "active_page_index": "not a number"}, step=0
+        )
+        assert obs.active_page_index == 0

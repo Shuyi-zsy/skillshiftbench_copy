@@ -4,6 +4,7 @@ import collections
 import html
 import importlib
 import json
+import logging
 import time
 import urllib
 from pathlib import Path
@@ -17,6 +18,8 @@ from webarena.browser_env.utils import StateInfo
 from webarena.evaluation_harness.helper_functions import PseudoPage
 
 from .llm_judge import judge, judge_unachievable
+
+logger = logging.getLogger(__name__)
 
 Trajectory = list[Union[Action, StateInfo]]
 
@@ -261,7 +264,13 @@ class HTMLContentEvaluator(Evaluator):
                 raise ValueError(f"Unknown locator: {locator}")
 
             selected_element = html.unescape(selected_element)
-            print(f"selected element: {selected_element}")
+            # Was a bare `print` of the whole selected element, inherited from
+            # WebArena. On a non-blocking stdout -- which is what a pipe under
+            # tmux gives you -- writing a page-sized string raises
+            # BlockingIOError, and because this runs inside the evaluator the
+            # exception kills the task. One run of the reference sweep was lost
+            # to it. A debug print must never be able to destroy a measurement.
+            logger.debug("selected element: %s", selected_element)
 
             if "exact_match" in target["required_contents"]:
                 required_contents = target["required_contents"]["exact_match"]
@@ -319,7 +328,7 @@ class EvaluatorComb:
         for evaluator in self.evaluators:
             cur_score = evaluator(trajectory, config_file, page, client)
             score *= cur_score
-        print(f"score: {score}")
+        logger.debug("score: %s", score)
         return score
 
 
