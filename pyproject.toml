@@ -34,7 +34,14 @@ run = [
     "browsergym-core==0.10.2",
     "browsergym-experiments==0.10.2",
     "browsergym-webarena==0.10.2",
-    "playwright>=1.44",
+    # The ceiling is browsergym's, not ours: browsergym-core 0.10.2 declares
+    # `playwright~=1.39` and libwebarena 0.0.3 (via browsergym-webarena)
+    # declares `playwright>=1.32,<1.40`.  Anything at or above 1.40 makes
+    # `pip install -e ".[run]"` unresolvable.  `requirements-lock.txt` records
+    # playwright 1.56.0, because the paper's environment was assembled without
+    # the resolver agreeing; that freeze is kept verbatim and this is the pin
+    # that actually installs.  Raise it only together with browsergym.
+    "playwright>=1.39,<1.40",
     "openai>=1.40",
     "numpy>=1.24",
     "pillow>=10.0",
