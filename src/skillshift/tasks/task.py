@@ -331,7 +331,7 @@ class GenericMyBenchmarkTask(AbstractBrowserTask):
         self.task_configs = task_configs
 
     def setup(self, page: playwright.sync_api.Page) -> tuple[str, dict]:
-        from .evaluators import evaluator_router
+        from ..eval.evaluators import evaluator_router
 
         if self.with_execution_shift:
             controller = InterferenceController(
