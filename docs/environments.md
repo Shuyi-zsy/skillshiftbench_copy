@@ -11,6 +11,28 @@ backups are on Hugging Face at
 | Magento | 1.9 | 2.4 | 114 |
 | WordPress | `news-portal` theme | `twentytwentyfour` theme | 79 |
 
+## Host architecture
+
+**SkillShift-Bench needs a `linux/amd64` host.** This is not a preference the
+images could be rebuilt out of: three of the five environments are pinned to
+upstream images that were never published for arm64.
+
+| Environment | Upstream base | arm64 build |
+| --- | --- | --- |
+| GitLab 12 / 16 | `gitlab/gitlab-ce` | none |
+| Magento 2.4 | WebArena's `shopping_admin_final_0719` | none |
+| Magento 1.9 | `andreaskoch/dockerized-magento-php` | none |
+
+Every image in `ghcr.io/skillshift-bench/*` is therefore `linux/amd64` only, and
+`skillshift-envs` pins the platform explicitly rather than letting the builder
+pick one that happens to match the build host.
+
+On Apple Silicon these run only under Docker Desktop's emulation. That path is
+not part of what SkillShift-Bench verifies -- the reported numbers come from
+native amd64 hosts -- and GitLab, whose omnibus image supervises a dozen
+services, has not been exercised under emulation at all. Treat a Mac as a place
+to read the code, not to produce results.
+
 ## URL variables
 
 The harness reads one variable per site and version:
@@ -144,3 +166,11 @@ run at once.
 - Image digests are published in `skillshift-envs/DIGESTS.json` and recorded in
   every run receipt, so the leaderboard can tell whether a run used the official
   environment.
+- `magento-v24` is the one entry in that file that is not a registry digest, and
+  that is deliberate rather than an oversight. The environment is WebArena's
+  `shopping_admin_final_0719`, linked rather than re-hosted, and it arrives as a
+  tar you `docker load`. A loaded image has no `RepoDigest` -- that field is a
+  registry's content address, and no registry ever served this image -- so the
+  entry records the image's *config* digest instead. `docker load` copies that
+  value verbatim out of the archive, so two people who load the same tar record
+  the same digest. It cannot be used to pull anything.
