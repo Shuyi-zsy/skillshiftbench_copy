@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import multiprocessing
 import os
 import signal
 import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import Any
 
@@ -239,6 +241,36 @@ def make_browsergym_env(task_uid: str, *, headless: bool = True, max_steps: int 
     )
 
 
+def _run_one_task_in_worker(
+    *,
+    agent_spec: str,
+    site: str,
+    condition: str,
+    task_uid: str,
+    max_steps: int,
+    headless: bool,
+    timeout: float | None,
+) -> TaskRecord:
+    """`--workers>1` entry point: run exactly one task in a fresh subprocess.
+
+    Takes only picklable primitives and rebuilds everything else (the task,
+    the agent, the browser) from scratch inside the worker. A worker process
+    is spawned, not forked: forking after a sibling worker has already opened
+    a browser would copy that worker's live Playwright connection into the
+    child, corrupting both. Spawning always starts a clean interpreter, so
+    `browsergym`/`playwright` are imported here for the first time and
+    `_deadline`'s SIGALRM lands on this process's only -- and therefore
+    main -- thread, exactly as it does in the serial path.
+    """
+    from .agents import load_agent_factory
+
+    task_ref = registry_mod.load_registry().resolve(task_uid, site=site, condition=condition)
+    task = TaskSpec.from_task_ref(task_ref, condition=condition, max_steps=max_steps)
+    agent = load_agent_factory(agent_spec)()
+    env = make_browsergym_env(task.uid, headless=headless, max_steps=max_steps)
+    return run_task(task=task, agent=agent, env=env, timeout=timeout)
+
+
 def run_condition(
     *,
     site: str,
@@ -250,12 +282,26 @@ def run_condition(
     env_factory: Callable[..., Any] | None = None,
     on_record: Callable[[TaskRecord], None] | None = None,
     timeout: float | None = DEFAULT_TASK_TIMEOUT_SECONDS,
+    workers: int = 1,
+    agent_spec: str | None = None,
 ) -> tuple[TaskRecord, ...]:
     """Run every task of one site under one condition.
 
     Records are handed to `on_record` as they are produced, so a long sweep can
     be written to disk incrementally rather than lost on interruption.
+
+    `workers` parallelises the tasks *within* this one (site, condition) cell
+    only -- never across cells or across environments, since a whole other
+    environment does not fit in memory next to this one, and WordPress's v1/v2
+    share a single instance (a theme swap, not a second deployment). Each
+    worker gets its own subprocess and its own browser; nothing about the
+    tasks is guaranteed independent on the site side, so two workers hitting
+    the same GitLab or Magento instance at once can race if the tasks happen
+    to write overlapping state. That trade-off is the caller's to make.
     """
+    if workers < 1:
+        raise SkillShiftError(f"workers must be at least 1, got {workers}.")
+
     spec = conditions_mod.resolve(condition)
     reg = registry_mod.load_registry()
 
@@ -264,16 +310,74 @@ def run_condition(
     else:
         tasks = tuple(reg.resolve(uid, site=site, condition=spec.name) for uid in task_uids)
 
+    if workers > 1:
+        if env_factory is not None:
+            raise SkillShiftError(
+                "workers>1 runs each task in its own subprocess, so a custom "
+                "env_factory (which is typically a closure) cannot be sent "
+                "along -- it is not picklable. Use workers=1 with a custom "
+                "env_factory, e.g. in tests."
+            )
+        if not agent_spec:
+            raise SkillShiftError(
+                "workers>1 needs agent_spec (the same string passed to "
+                "--agent) so each worker subprocess can rebuild the agent "
+                "itself; an already-built agent_factory cannot be sent to a "
+                "subprocess."
+            )
+
     make_env = env_factory or make_browsergym_env
-    records: list[TaskRecord] = []
+    task_specs = [
+        TaskSpec.from_task_ref(task_ref, condition=spec.name, max_steps=max_steps)
+        for task_ref in tasks
+    ]
 
     with condition_environment(site, spec.name):
-        for task_ref in tasks:
-            task = TaskSpec.from_task_ref(task_ref, condition=spec.name, max_steps=max_steps)
-            env = make_env(task.uid, headless=headless, max_steps=max_steps)
-            record = run_task(task=task, agent=agent_factory(), env=env, timeout=timeout)
-            records.append(record)
-            if on_record is not None:
-                on_record(record)
+        if workers <= 1:
+            records: list[TaskRecord] = []
+            for task in task_specs:
+                env = make_env(task.uid, headless=headless, max_steps=max_steps)
+                record = run_task(task=task, agent=agent_factory(), env=env, timeout=timeout)
+                records.append(record)
+                if on_record is not None:
+                    on_record(record)
+            return tuple(records)
 
-    return tuple(records)
+        results: list[TaskRecord | None] = [None] * len(task_specs)
+        mp_context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp_context) as pool:
+            future_to_index = {
+                pool.submit(
+                    _run_one_task_in_worker,
+                    agent_spec=agent_spec,
+                    site=site,
+                    condition=spec.name,
+                    task_uid=task.uid,
+                    max_steps=max_steps,
+                    headless=headless,
+                    timeout=timeout,
+                ): index
+                for index, task in enumerate(task_specs)
+            }
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                task = task_specs[index]
+                try:
+                    record = future.result()
+                except Exception as exc:  # noqa: BLE001 - a worker crash is one failed task
+                    logger.exception("Task %s failed inside a worker subprocess", task.uid)
+                    record = TaskRecord(
+                        uid=task.uid,
+                        site=site,
+                        condition=spec.name,
+                        success=False,
+                        steps=0,
+                        skill_calls=0,
+                        skill_failures=0,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                results[index] = record
+                if on_record is not None:
+                    on_record(record)
+
+        return tuple(results)

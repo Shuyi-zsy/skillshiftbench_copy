@@ -9,6 +9,7 @@ import pytest
 from skillshift import runner
 from skillshift.agents.base import TaskSpec
 from skillshift.errors import SkillShiftError
+from skillshift.eval.records import TaskRecord
 from skillshift.runner import run_task
 
 
@@ -284,3 +285,251 @@ class TestTaskDeadline:
             timeout=None,
         )
         assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+def _exploding_agent_factory():
+    """A `run_condition(workers=1, ...)` agent_factory: fails the test if
+    called, since workers>1 must route through subprocesses instead."""
+
+    def _factory():
+        raise AssertionError("agent_factory was called; workers>1 must not use it directly")
+
+    return _factory
+
+
+class _ImmediateFuture:
+    """A `concurrent.futures.Future` stand-in that is already resolved."""
+
+    def __init__(self, *, value=None, exc: BaseException | None = None):
+        self._value = value
+        self._exc = exc
+
+    def result(self):
+        if self._exc is not None:
+            raise self._exc
+        return self._value
+
+
+class _ImmediatePool:
+    """A `ProcessPoolExecutor` stand-in that runs work in-process, instantly.
+
+    Lets `run_condition`'s parallel-dispatch wiring be tested without paying
+    for a real subprocess spawn (which would also need the real browser stack
+    installed) on every test run.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.max_workers = kwargs.get("max_workers")
+        self.submitted: list[dict] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def submit(self, fn, **kwargs):
+        self.submitted.append(kwargs)
+        try:
+            return _ImmediateFuture(value=fn(**kwargs))
+        except Exception as exc:  # noqa: BLE001 - mirrors a real worker crash
+            return _ImmediateFuture(exc=exc)
+
+
+class TestRunConditionWorkers:
+    """`run_condition(workers=...)`: dispatch, not the browser stack itself.
+
+    `_run_one_task_in_worker` is monkeypatched out in every test below, so
+    none of this touches browsergym/playwright -- it only proves that
+    `run_condition` wires the parallel path up correctly: right kwargs to
+    each worker, results back in task order, `on_record` fired for each, and
+    a worker's exception turned into a failed record rather than losing the
+    whole cell.
+    """
+
+    TASK_UIDS = ["skillshift.wordpress.0", "skillshift.wordpress.13"]
+
+    def _patch_pool(self, monkeypatch, worker):
+        monkeypatch.setattr(runner, "_run_one_task_in_worker", worker)
+        monkeypatch.setattr(runner, "ProcessPoolExecutor", _ImmediatePool)
+        monkeypatch.setattr(runner, "as_completed", lambda futures: list(futures))
+
+    def test_workers_below_one_is_rejected(self):
+        with pytest.raises(SkillShiftError, match="at least 1"):
+            runner.run_condition(
+                site="wordpress",
+                condition="src",
+                agent_factory=_exploding_agent_factory(),
+                task_uids=self.TASK_UIDS,
+                workers=0,
+                agent_spec="reference",
+            )
+
+    def test_a_custom_env_factory_is_rejected_because_it_cannot_be_pickled(self):
+        with pytest.raises(SkillShiftError, match="env_factory"):
+            runner.run_condition(
+                site="wordpress",
+                condition="src",
+                agent_factory=_exploding_agent_factory(),
+                task_uids=self.TASK_UIDS,
+                workers=2,
+                agent_spec="reference",
+                env_factory=lambda uid, **_: FakeEnv(),
+            )
+
+    def test_a_missing_agent_spec_is_rejected(self):
+        with pytest.raises(SkillShiftError, match="agent_spec"):
+            runner.run_condition(
+                site="wordpress",
+                condition="src",
+                agent_factory=_exploding_agent_factory(),
+                task_uids=self.TASK_UIDS,
+                workers=2,
+            )
+
+    def test_each_worker_gets_the_right_task_and_the_pool_is_sized_to_workers(self, monkeypatch):
+        def worker(*, agent_spec, site, condition, task_uid, max_steps, headless, timeout):
+            return TaskRecord(
+                uid=task_uid, site=site, condition=condition, success=True,
+                steps=1, skill_calls=0, skill_failures=0,
+            )
+
+        self._patch_pool(monkeypatch, worker)
+        records = runner.run_condition(
+            site="wordpress",
+            condition="src",
+            agent_factory=_exploding_agent_factory(),
+            task_uids=self.TASK_UIDS,
+            workers=2,
+            agent_spec="reference",
+        )
+
+        assert [r.uid for r in records] == [
+            "skillshift.wordpress.v1.0",
+            "skillshift.wordpress.v1.13",
+        ]
+        assert all(r.success for r in records)
+
+    def test_records_come_back_in_task_order_even_if_a_worker_finishes_out_of_order(
+        self, monkeypatch
+    ):
+        def worker(*, task_uid, **_):
+            # the second task "finishes" first
+            return TaskRecord(
+                uid=task_uid, site="wordpress", condition="src",
+                success=task_uid.endswith(".13"), steps=1, skill_calls=0, skill_failures=0,
+            )
+
+        self._patch_pool(monkeypatch, worker)
+        records = runner.run_condition(
+            site="wordpress",
+            condition="src",
+            agent_factory=_exploding_agent_factory(),
+            task_uids=self.TASK_UIDS,
+            workers=2,
+            agent_spec="reference",
+        )
+
+        assert records[0].uid.endswith(".0")
+        assert records[1].uid.endswith(".13")
+
+    def test_a_worker_crash_becomes_a_failed_record_not_a_lost_cell(self, monkeypatch):
+        def worker(*, task_uid, **_):
+            if task_uid.endswith(".13"):
+                raise RuntimeError("worker process crashed")
+            return TaskRecord(
+                uid=task_uid, site="wordpress", condition="src",
+                success=True, steps=1, skill_calls=0, skill_failures=0,
+            )
+
+        self._patch_pool(monkeypatch, worker)
+        records = runner.run_condition(
+            site="wordpress",
+            condition="src",
+            agent_factory=_exploding_agent_factory(),
+            task_uids=self.TASK_UIDS,
+            workers=2,
+            agent_spec="reference",
+        )
+
+        failed = [r for r in records if r.uid.endswith(".13")]
+        assert len(failed) == 1
+        assert failed[0].success is False
+        assert "worker process crashed" in failed[0].error
+
+    def test_on_record_fires_once_per_task(self, monkeypatch):
+        def worker(*, task_uid, **_):
+            return TaskRecord(
+                uid=task_uid, site="wordpress", condition="src",
+                success=True, steps=1, skill_calls=0, skill_failures=0,
+            )
+
+        self._patch_pool(monkeypatch, worker)
+        seen = []
+        runner.run_condition(
+            site="wordpress",
+            condition="src",
+            agent_factory=_exploding_agent_factory(),
+            task_uids=self.TASK_UIDS,
+            workers=2,
+            agent_spec="reference",
+            on_record=seen.append,
+        )
+
+        assert len(seen) == len(self.TASK_UIDS)
+
+    def test_the_pool_is_sized_to_the_workers_argument(self, monkeypatch):
+        pools: list[_ImmediatePool] = []
+
+        class RecordingPool(_ImmediatePool):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                pools.append(self)
+
+        def worker(*, task_uid, **_):
+            return TaskRecord(
+                uid=task_uid, site="wordpress", condition="src",
+                success=True, steps=1, skill_calls=0, skill_failures=0,
+            )
+
+        monkeypatch.setattr(runner, "_run_one_task_in_worker", worker)
+        monkeypatch.setattr(runner, "ProcessPoolExecutor", RecordingPool)
+        monkeypatch.setattr(runner, "as_completed", lambda futures: list(futures))
+
+        runner.run_condition(
+            site="wordpress",
+            condition="src",
+            agent_factory=_exploding_agent_factory(),
+            task_uids=self.TASK_UIDS,
+            workers=3,
+            agent_spec="reference",
+        )
+
+        assert len(pools) == 1
+        assert pools[0].max_workers == 3
+
+    def test_workers_equal_to_one_still_uses_the_serial_path(self, monkeypatch):
+        """workers=1 (the default) must be byte-for-byte the old code path:
+        no pool, no subprocess, agent_factory called directly."""
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("ProcessPoolExecutor must not be used when workers=1")
+
+        monkeypatch.setattr(runner, "ProcessPoolExecutor", _boom)
+        calls = []
+
+        def agent_factory():
+            calls.append(1)
+            return ScriptedAgent()
+
+        records = runner.run_condition(
+            site="wordpress",
+            condition="src",
+            agent_factory=agent_factory,
+            task_uids=self.TASK_UIDS,
+            workers=1,
+            env_factory=lambda uid, **_: FakeEnv(reward_at=1, terminate_at=1),
+        )
+
+        assert len(calls) == len(self.TASK_UIDS)
+        assert len(records) == len(self.TASK_UIDS)

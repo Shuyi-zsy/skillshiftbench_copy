@@ -249,3 +249,62 @@ class TestStepBudgetGuard:
             capsys,
         )
         assert code == 0
+
+
+class TestWorkers:
+    def test_the_default_is_serial(self, tmp_path, capsys, monkeypatch):
+        seen = {}
+
+        def spy(plans, **kwargs):
+            seen.update(kwargs)
+            return fake_records(sr_percent=20.0, avg_steps=8.0)(plans, **kwargs)
+
+        monkeypatch.setattr(cli, "_run_pairs", spy)
+        code, _ = run(
+            ["calibrate", "--reference", str(published_anchor(tmp_path)), "--out", str(tmp_path / "runs")],
+            capsys,
+        )
+
+        assert code == 0
+        assert seen["workers"] == 1
+        assert seen["agent_spec"] == "reference"
+
+    def test_workers_and_agent_reach_run_pairs(self, tmp_path, capsys, monkeypatch):
+        seen = {}
+
+        def spy(plans, **kwargs):
+            seen.update(kwargs)
+            return fake_records(sr_percent=20.0, avg_steps=8.0)(plans, **kwargs)
+
+        monkeypatch.setattr(cli, "_run_pairs", spy)
+        code, _ = run(
+            [
+                "calibrate",
+                "--reference", str(published_anchor(tmp_path)),
+                "--workers", "5",
+                "--out", str(tmp_path / "runs"),
+            ],
+            capsys,
+        )
+
+        assert code == 0
+        assert seen["workers"] == 5
+        assert seen["agent_spec"] == "reference"
+
+    def test_zero_workers_is_rejected_before_anything_runs(self, tmp_path, capsys, monkeypatch):
+        called = []
+        monkeypatch.setattr(cli, "_run_pairs", lambda *a, **k: called.append(1) or ())
+
+        code, out = run(
+            [
+                "calibrate",
+                "--reference", str(published_anchor(tmp_path)),
+                "--workers", "0",
+                "--out", str(tmp_path / "runs"),
+            ],
+            capsys,
+        )
+
+        assert code == 2
+        assert "workers" in out
+        assert called == []

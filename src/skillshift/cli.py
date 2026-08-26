@@ -248,7 +248,9 @@ def _echo_record(record) -> None:
     )
 
 
-def _run_pairs(plans, *, factory, max_steps: int, headless: bool, timeout=None) -> tuple:
+def _run_pairs(
+    plans, *, factory, max_steps: int, headless: bool, timeout=None, workers: int = 1, agent_spec=None
+) -> tuple:
     """Execute a list of `(site, condition, task_ids | None)` plans.
 
     The single execution path behind both `skillshift run` and
@@ -270,6 +272,8 @@ def _run_pairs(plans, *, factory, max_steps: int, headless: bool, timeout=None) 
                 headless=headless,
                 timeout=timeout,
                 on_record=_echo_record,
+                workers=workers,
+                agent_spec=agent_spec,
             )
         )
     return tuple(records)
@@ -392,6 +396,10 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         )
         return EXIT_USAGE
 
+    if args.workers < 1:
+        print(f"error: --workers must be at least 1, got {args.workers}.", file=sys.stderr)
+        return EXIT_USAGE
+
     from .agents import load_agent_factory
     from .report import PRIVATE_FILE_NOTICE
 
@@ -401,6 +409,8 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         max_steps=args.max_steps,
         headless=not args.headed,
         timeout=args.task_timeout,
+        workers=args.workers,
+        agent_spec=args.agent,
     )
     _write_records(records, Path(args.out))
     print(PRIVATE_FILE_NOTICE)
@@ -438,6 +448,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             raise SkillShiftError("Pass --site and --condition, or --all.")
         pairs = [(sites.get(args.site).name, conditions.resolve(args.condition).name)]
 
+    if args.workers < 1:
+        raise SkillShiftError(f"--workers must be at least 1, got {args.workers}.")
+
     plans = [(site, condition, args.tasks or None) for site, condition in pairs]
     records = _run_pairs(
         plans,
@@ -445,6 +458,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         max_steps=args.max_steps,
         headless=not args.headed,
         timeout=args.task_timeout,
+        workers=args.workers,
+        agent_spec=args.agent,
     )
 
     out_dir = Path(args.out)
@@ -657,6 +672,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     calibrate.add_argument("--headed", action="store_true", help="show the browser")
     calibrate.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "run this many tasks at once within each (site, condition) cell "
+            "(default: 1, i.e. serial). Never parallelises across cells or "
+            "environments -- WordPress's v1/v2 share one instance, and a "
+            "second environment does not fit in memory next to the first. "
+            "Tasks in the same cell that hit the same GitLab/Magento instance "
+            "concurrently are not guaranteed independent."
+        ),
+    )
+    calibrate.add_argument(
         "--reference", default=None, help="path to a reference_results file (default: the shipped one)"
     )
     calibrate.add_argument(
@@ -694,6 +722,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run.add_argument("--headed", action="store_true", help="show the browser")
+    run.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "run this many tasks at once within each (site, condition) cell "
+            "(default: 1, i.e. serial). Never parallelises across cells or "
+            "environments -- WordPress's v1/v2 share one instance, and a "
+            "second environment does not fit in memory next to the first. "
+            "Tasks in the same cell that hit the same GitLab/Magento instance "
+            "concurrently are not guaranteed independent."
+        ),
+    )
     run.add_argument("--out", default="runs/latest")
     run.set_defaults(func=cmd_run)
 
