@@ -1,6 +1,8 @@
 """The generic run loop, exercised against a fake environment."""
 
 import os
+import signal
+import time
 
 import pytest
 
@@ -209,3 +211,76 @@ class TestWebArenaEnvironmentVariables:
             monkeypatch.delenv(name, raising=False)
         with runner.condition_environment("wordpress", "src"):
             assert os.environ["GITLAB"]
+
+
+class TestTaskDeadline:
+    """One hung page must not cost the whole sweep.
+
+    Measured: a GitLab task parked inside playwright's event loop -- main
+    thread idle in `select`, chromium at 0% CPU, the site answering in 80ms --
+    and stayed there for eleven hours. `run_task` looped on `steps <
+    max_steps` with no wall-clock bound of any kind, so nothing was ever going
+    to end it. `calibration.md` promises the whole run takes about fifteen
+    minutes; a stranger would have left it overnight, as this run did.
+
+    A task that runs out of time is recorded as an error, not as a plain
+    failure: it is the absence of a measurement, and `build_reference_anchor`
+    refuses a sweep containing one rather than folding a hang into an anchor.
+    """
+
+    def hanging_env(self, seconds=30):
+        class HangingEnv:
+            closed = False
+
+            def reset(self):
+                time.sleep(seconds)
+                return {}, {}
+
+            def step(self, action):
+                time.sleep(seconds)
+                return {}, 0, False, False, {}
+
+            def close(self):
+                HangingEnv.closed = True
+
+        return HangingEnv()
+
+    def test_a_hanging_task_ends_and_is_recorded_as_an_error(self):
+        record = runner.run_task(
+            task=spec(max_steps=10),
+            agent=ScriptedAgent(),
+            env=self.hanging_env(),
+            timeout=1,
+        )
+        assert record.error is not None
+        assert "timeout" in record.error.lower() or "TaskTimeout" in record.error
+        assert record.success is False
+
+    def test_it_really_stops_rather_than_waiting_out_the_env(self):
+        started = time.monotonic()
+        runner.run_task(
+            task=spec(max_steps=10),
+            agent=ScriptedAgent(),
+            env=self.hanging_env(seconds=30),
+            timeout=1,
+        )
+        assert time.monotonic() - started < 20, "the deadline did not interrupt the blocked call"
+
+    def test_a_task_that_finishes_in_time_is_untouched(self):
+        record = runner.run_task(
+            task=spec(max_steps=2),
+            agent=ScriptedAgent(),
+            env=FakeEnv(reward_at=1, terminate_at=2),
+            timeout=60,
+        )
+        assert record.error is None
+        assert record.success is True
+
+    def test_no_timeout_means_no_alarm_is_left_armed(self):
+        runner.run_task(
+            task=spec(max_steps=1),
+            agent=ScriptedAgent(),
+            env=FakeEnv(reward_at=1, terminate_at=1),
+            timeout=None,
+        )
+        assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)

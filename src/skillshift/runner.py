@@ -8,8 +8,11 @@ real one.  The environment contract is the gymnasium one --
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+import signal
+import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
@@ -24,7 +27,72 @@ from .eval.records import TaskRecord
 logger = logging.getLogger(__name__)
 
 
-def run_task(*, task: TaskSpec, agent: Any, env: Any) -> TaskRecord:
+#: Wall-clock ceiling for one task, in seconds.
+#
+# Measured on the build machine: a GitLab task parked inside playwright's event
+# loop -- main thread idle in `select`, chromium at 0% CPU, the site itself
+# answering in 80ms -- and stayed there for eleven hours, because the run loop
+# bounded only the number of steps and nothing bounded time.  `calibration.md`
+# advertises the whole 180-run sweep as a fifteen-minute check; without a
+# deadline a single hung page turns that into an overnight wait with nothing to
+# show for it.
+#
+# 600s is generous next to the ~70-110s a real task took, so it fires on hangs
+# rather than on slow pages.
+DEFAULT_TASK_TIMEOUT_SECONDS = 600
+
+#: Closing a wedged browser can wedge too, so the teardown gets its own, shorter,
+#: ceiling.  A leaked chromium is worth less than a stalled sweep.
+CLOSE_TIMEOUT_SECONDS = 60
+
+
+class TaskTimeout(SkillShiftError):
+    """One task exceeded its wall-clock ceiling."""
+
+
+@contextmanager
+def _deadline(seconds: float | None) -> Iterator[None]:
+    """Raise `TaskTimeout` in the main thread after `seconds`.
+
+    SIGALRM rather than a watchdog thread, because the thing that needs
+    interrupting is a blocking read inside playwright's event loop and a thread
+    cannot interrupt that.  Where SIGALRM does not exist, or where this is not
+    the main thread, the deadline is skipped rather than faked -- a timeout that
+    silently does nothing would be worse than none at all.
+    """
+    usable = (
+        seconds
+        and seconds > 0
+        and hasattr(signal, "SIGALRM")
+        and threading.current_thread() is threading.main_thread()
+    )
+    if not usable:
+        yield
+        return
+
+    def _fire(_signum, _frame):
+        raise TaskTimeout(
+            f"the task exceeded its {seconds:g}s ceiling and was stopped. The run loop "
+            f"bounds steps, not time; a browser call that never returns is what this "
+            f"catches. Raise it with --task-timeout if a task legitimately needs longer."
+        )
+
+    previous = signal.signal(signal.SIGALRM, _fire)
+    signal.setitimer(signal.ITIMER_REAL, float(seconds))
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def run_task(
+    *,
+    task: TaskSpec,
+    agent: Any,
+    env: Any,
+    timeout: float | None = DEFAULT_TASK_TIMEOUT_SECONDS,
+) -> TaskRecord:
     """Run one task to completion and return its record.
 
     A crash inside the agent or the environment ends that task, not the whole
@@ -41,24 +109,27 @@ def run_task(*, task: TaskSpec, agent: Any, env: Any) -> TaskRecord:
     error: str | None = None
 
     try:
-        raw_obs, _ = env.reset()
-        agent.reset(task, recorder)
+        with _deadline(timeout):
+            raw_obs, _ = env.reset()
+            agent.reset(task, recorder)
 
-        while steps < task.max_steps:
-            action = agent.act(observation_from(raw_obs, step=steps, page=_page_of(env)))
-            raw_obs, reward, terminated, truncated, _ = env.step(action)
-            steps += 1
+            while steps < task.max_steps:
+                action = agent.act(observation_from(raw_obs, step=steps, page=_page_of(env)))
+                raw_obs, reward, terminated, truncated, _ = env.step(action)
+                steps += 1
 
-            if reward and float(reward) > 0:
-                success = True
-            if terminated or truncated:
-                break
+                if reward and float(reward) > 0:
+                    success = True
+                if terminated or truncated:
+                    break
 
     except Exception as exc:  # noqa: BLE001 - recorded, logged, and reported
         error = f"{type(exc).__name__}: {exc}"
         logger.exception("Task %s failed during execution", task.uid)
     finally:
-        _close(env)
+        with contextlib.suppress(Exception):
+            with _deadline(CLOSE_TIMEOUT_SECONDS):
+                _close(env)
 
     return TaskRecord(
         uid=task.uid,
@@ -178,6 +249,7 @@ def run_condition(
     headless: bool = True,
     env_factory: Callable[..., Any] | None = None,
     on_record: Callable[[TaskRecord], None] | None = None,
+    timeout: float | None = DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> tuple[TaskRecord, ...]:
     """Run every task of one site under one condition.
 
@@ -199,7 +271,7 @@ def run_condition(
         for task_ref in tasks:
             task = TaskSpec.from_task_ref(task_ref, condition=spec.name, max_steps=max_steps)
             env = make_env(task.uid, headless=headless, max_steps=max_steps)
-            record = run_task(task=task, agent=agent_factory(), env=env)
+            record = run_task(task=task, agent=agent_factory(), env=env, timeout=timeout)
             records.append(record)
             if on_record is not None:
                 on_record(record)

@@ -13,9 +13,19 @@ skillshift calibrate
 ```
 
 It runs the built-in **no-skill ReAct reference agent** over a fixed subset of
-thirty task families under all six conditions — 180 runs, roughly fifteen
-minutes — and reports, per cell, how far your deployment sits from the
-published anchor.
+thirty task families under all six conditions — 180 runs — and reports, per
+cell, how far your deployment sits from the published anchor.
+
+Budget hours, not minutes. Measured on a 16-core x86_64 host with all five
+environments up, one task takes roughly 70–110 seconds: ten LLM calls at most,
+each carrying a full accessibility tree, plus the browser work between them.
+
+Each task also has a wall-clock ceiling (`--task-timeout`, 600s by default).
+The run loop bounds *steps*, not time, and a browser call that never returns
+would otherwise stall the whole sweep — one did, for eleven hours, while the
+sites themselves answered in under 100ms. A task that hits the ceiling is
+recorded as an error rather than as a failure, because it is the absence of a
+measurement, not a measurement of failure.
 
 > **Status: the anchor is not published yet.** The numbers can only be measured
 > against the environment images that ship, and those are not tagged yet. Until

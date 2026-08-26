@@ -20,6 +20,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__, conditions, environments, paths, sites
+
+# `runner` is import-light on purpose -- the browser stack behind it is imported
+# lazily inside `make_browsergym_env`, so this stays safe for a core install.
+from . import runner as runner_mod
 from .errors import SkillShiftError
 
 EXIT_OK = 0
@@ -244,7 +248,7 @@ def _echo_record(record) -> None:
     )
 
 
-def _run_pairs(plans, *, factory, max_steps: int, headless: bool) -> tuple:
+def _run_pairs(plans, *, factory, max_steps: int, headless: bool, timeout=None) -> tuple:
     """Execute a list of `(site, condition, task_ids | None)` plans.
 
     The single execution path behind both `skillshift run` and
@@ -264,6 +268,7 @@ def _run_pairs(plans, *, factory, max_steps: int, headless: bool) -> tuple:
                 task_uids=list(task_ids) if task_ids else None,
                 max_steps=max_steps,
                 headless=headless,
+                timeout=timeout,
                 on_record=_echo_record,
             )
         )
@@ -395,6 +400,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         factory=load_agent_factory(args.agent),
         max_steps=args.max_steps,
         headless=not args.headed,
+        timeout=args.task_timeout,
     )
     _write_records(records, Path(args.out))
     print(PRIVATE_FILE_NOTICE)
@@ -438,6 +444,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         factory=load_agent_factory(args.agent),
         max_steps=args.max_steps,
         headless=not args.headed,
+        timeout=args.task_timeout,
     )
 
     out_dir = Path(args.out)
@@ -636,6 +643,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     calibrate.add_argument("--out", default=CALIBRATION_DEFAULT_OUT)
     calibrate.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS, dest="max_steps")
+    calibrate.add_argument(
+        "--task-timeout",
+        type=float,
+        default=runner_mod.DEFAULT_TASK_TIMEOUT_SECONDS,
+        dest="task_timeout",
+        help=(
+            "wall-clock ceiling per task in seconds (default: "
+            f"{runner_mod.DEFAULT_TASK_TIMEOUT_SECONDS:g}); 0 disables it. The run loop "
+            "bounds steps, not time, so this is what ends a browser call that never returns."
+        ),
+    )
+
     calibrate.add_argument("--headed", action="store_true", help="show the browser")
     calibrate.add_argument(
         "--reference", default=None, help="path to a reference_results file (default: the shipped one)"
@@ -662,6 +681,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--all", action="store_true", help="all 3 sites x 6 conditions")
     run.add_argument("--tasks", nargs="*", help="specific task ids instead of the whole site")
     run.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS, dest="max_steps")
+    run.add_argument(
+        "--task-timeout",
+        type=float,
+        default=runner_mod.DEFAULT_TASK_TIMEOUT_SECONDS,
+        dest="task_timeout",
+        help=(
+            "wall-clock ceiling per task in seconds (default: "
+            f"{runner_mod.DEFAULT_TASK_TIMEOUT_SECONDS:g}); 0 disables it. The run loop "
+            "bounds steps, not time, so this is what ends a browser call that never returns."
+        ),
+    )
+
     run.add_argument("--headed", action="store_true", help="show the browser")
     run.add_argument("--out", default="runs/latest")
     run.set_defaults(func=cmd_run)
