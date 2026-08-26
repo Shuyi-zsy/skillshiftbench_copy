@@ -5,6 +5,7 @@ import html
 import importlib
 import json
 import logging
+import re
 import time
 import urllib
 from pathlib import Path
@@ -146,8 +147,91 @@ class StringEvaluator(Evaluator):
         return score
 
 
+def _clean_url(url: str) -> str:
+    return str(url).rstrip("/")
+
+
+def _parse_url(url: str) -> tuple[str, dict[str, list[str]]]:
+    """Parse a URL into its base-path and query components."""
+    parsed_url = urllib.parse.urlparse(url)
+    base_path = parsed_url.netloc + parsed_url.path
+    query = urllib.parse.parse_qs(parsed_url.query)
+    return base_path, query
+
+
+def _parse_urls(urls: list[str]) -> tuple[list[str], dict[str, set[str]]]:
+    """Parse a list of URLs, merging their query values by key."""
+    base_paths = []
+    queries: dict[str, set[str]] = collections.defaultdict(set)
+    for url in urls:
+        base_path, query = _parse_url(url)
+        base_paths.append(base_path)
+        for k, v in query.items():
+            queries[k].update(v)
+    return base_paths, queries
+
+
+def _url_match_score(pred: str, ref_urls: list[str]) -> float:
+    """"GOLD in PRED": pred's base path contains one of the gold base paths,
+    and pred's query carries every value the gold query requires."""
+    ref_base_paths, ref_queries = _parse_urls(ref_urls)
+    pred_base_path, pred_query = _parse_url(pred)
+
+    base_score = float(any(ref_base_path in pred_base_path for ref_base_path in ref_base_paths))
+    query_score = 1.0
+    for key, possible_values in ref_queries.items():
+        query_score *= float(
+            any(possible_ref_value in pred_query.get(key, []) for possible_ref_value in possible_values)
+        )
+    return base_score * query_score
+
+
+_CANONICAL_LINK_RE = re.compile(
+    r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']', re.IGNORECASE
+)
+
+
+def _canonical_of_loaded_page(page: Page | PseudoPage) -> str | None:
+    """The canonical URL the page currently open in `page` declares for itself.
+
+    Read from the already-rendered DOM -- no navigation, no network call.
+    """
+    try:
+        href = page.evaluate("() => document.querySelector('link[rel=\"canonical\"]')?.href || null")
+    except Exception:  # noqa: BLE001 - a page stand-in without this is a no-op, not a crash
+        return None
+    return str(href) if href else None
+
+
+def _canonical_of_url(page: Page | PseudoPage, url: str) -> str | None:
+    """Fetch `url` out-of-band -- via the browser context's own request API,
+    so this never navigates the agent's page or opens a visible tab -- and
+    read the canonical link its response declares."""
+    try:
+        response = page.context.request.get(url, timeout=10_000)
+        if not response.ok:
+            return None
+        html_text = response.text()
+    except Exception:  # noqa: BLE001 - the fallback degrades to "no match", not a crash
+        return None
+    match = _CANONICAL_LINK_RE.search(html_text)
+    return match.group(1) if match else None
+
+
 class URLEvaluator(Evaluator):
-    """Check URL matching"""
+    """Check URL matching, with a canonical-URL fallback for equivalent forms.
+
+    A CMS can serve one resource under more than one URL -- WordPress's
+    `?cat=46` and `/category/politics/` both resolve to the same category
+    archive -- and the literal base-path/query check below cannot see that.
+    A real trajectory run (skillshift.wordpress.26 and .52, 2026-08-26) showed
+    the reference agent reaching the exact right page by its pretty-permalink
+    form and scoring 0 anyway, because the gold answer was written as a query
+    string. When the literal check fails, this falls back to asking the page
+    itself: WordPress renders the same `<link rel="canonical">` regardless of
+    which URL form was requested, so comparing canonical forms recognizes the
+    equivalence without hardcoding a slug/id lookup table.
+    """
 
     @beartype
     def __call__(
@@ -160,61 +244,26 @@ class URLEvaluator(Evaluator):
         with open(config_file, "r") as f:
             configs = json.load(f)
 
-        def clean_url(url: str) -> str:
-            url = str(url)
-            url = url.rstrip("/")
-            return url
-
-        def parse_url(url: str) -> tuple[str, dict[str, list[str]]]:
-            """Parse a URL into its base, path, and query components."""
-            parsed_url = urllib.parse.urlparse(url)
-            base_path = parsed_url.netloc + parsed_url.path
-            query = urllib.parse.parse_qs(parsed_url.query)
-            return base_path, query
-
-        def parse_urls(
-            urls: list[str],
-        ) -> tuple[list[str], dict[str, set[str]]]:
-            """Parse a list of URLs."""
-            base_paths = []
-            queries = collections.defaultdict(set)
-            for url in urls:
-                base_path, query = parse_url(url)
-                base_paths.append(base_path)
-                for k, v in query.items():
-                    queries[k].update(v)
-            return base_paths, queries
-
-        pred = clean_url(page.url)
-        ref_urls = configs["eval"]["reference_url"].split(" |OR| ")
-        ref_urls = [clean_url(url) for url in ref_urls]
         matching_rule = configs["eval"].get("url_note", "GOLD in PRED")
-        if matching_rule == "GOLD in PRED":
-            ref_base_paths, ref_queries = parse_urls(ref_urls)
-            pred_base_paths, pred_query = parse_url(pred)
-
-            base_score = float(
-                any(
-                    [
-                        ref_base_path in pred_base_paths
-                        for ref_base_path in ref_base_paths
-                    ]
-                )
-            )
-            query_score = 1.0
-            for k, possible_values in ref_queries.items():
-                query_score *= float(
-                    any(
-                        possible_ref_value in pred_query.get(k, [])
-                        for possible_ref_value in possible_values
-                    )
-                )
-            score = base_score * query_score
-
-        else:
+        if matching_rule != "GOLD in PRED":
             raise ValueError(f"Unknown matching rule: {matching_rule}")
 
-        return score
+        pred = _clean_url(page.url)
+        ref_urls = [_clean_url(url) for url in configs["eval"]["reference_url"].split(" |OR| ")]
+
+        score = _url_match_score(pred, ref_urls)
+        if score > 0.0:
+            return score
+
+        canonical_pred = _canonical_of_loaded_page(page)
+        if not canonical_pred:
+            return 0.0
+        canonical_refs = [
+            canonical for url in ref_urls if (canonical := _canonical_of_url(page, url)) is not None
+        ]
+        if not canonical_refs:
+            return 0.0
+        return _url_match_score(_clean_url(canonical_pred), [_clean_url(url) for url in canonical_refs])
 
 
 class HTMLContentEvaluator(Evaluator):

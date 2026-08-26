@@ -47,8 +47,10 @@ class StepTrace:
     html: str = ""
     #: The acting agent's own LLM call for this step, when it reports one.
     agent_usage: TokenUsage | None = None
-    #: Any LLM-judge calls the evaluator made while scoring this step (only
-    #: non-empty on the step that ends the task).
+    #: Any LLM-judge calls the evaluator made while scoring this step.
+    #: browsergym's `env.step()` calls `task.validate()` on every step, not
+    #: only the last one, so a judge-backed evaluator (string_match,
+    #: program_html) bills one judge call per step, not one per task.
     judge_usage: tuple[TokenUsage, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict:
