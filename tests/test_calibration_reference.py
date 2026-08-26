@@ -1,10 +1,15 @@
 """The published reference anchor and the deviation check built on it.
 
-The anchor is empty on purpose until the environment images are tagged: a
-placeholder number here would be indistinguishable from a measured one, and
-`calibrate` would start certifying environments against fiction.  These tests
-pin both halves of that: the shipped file must parse and must *not* claim to be
-published, and `compare` must refuse to grade against an unpublished anchor.
+The shipped anchor was empty on purpose until the environment images were
+tagged and the 30 x 6 sweep was actually measured (2026-08-26, see
+data/reference_results/reference-react.json) -- a placeholder number would
+have been indistinguishable from a measured one, and `calibrate` would have
+started certifying environments against fiction. `TestShippedAnchor` now pins
+the post-measurement state: the file parses, is published, and every gated
+metric is populated. `compare`'s refusal to grade against an unpublished
+anchor is still tested against a throwaway payload built with
+`anchor_payload(status="pending")`, since that refusal must keep working for
+anyone else's not-yet-measured anchor.
 """
 
 from __future__ import annotations
@@ -85,16 +90,17 @@ class TestShippedAnchor:
         assert path.is_file()
         assert reference_mod.load_reference_results(path) is not None
 
-    def test_it_does_not_claim_to_be_published(self):
+    def test_it_claims_to_be_published(self):
         anchor = reference_mod.load_reference_results()
-        assert not anchor.is_published
+        assert anchor.is_published
 
-    def test_every_value_is_still_null(self):
+    def test_every_gated_value_is_populated(self):
         anchor = reference_mod.load_reference_results()
         for cell in anchor.cells():
-            for value in cell.metrics.values():
-                assert value.value is None
-                assert value.sigma is None
+            for name in anchor.gated_metrics:
+                value = cell.metric(name)
+                assert value.value is not None
+                assert value.sigma is not None
 
     def test_it_covers_the_full_grid_with_the_subset_denominators(self):
         anchor = reference_mod.load_reference_results()

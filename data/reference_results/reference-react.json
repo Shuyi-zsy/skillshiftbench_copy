@@ -1,22 +1,28 @@
 {
   "schema_version": "1.0",
-  "status": "pending",
-  "status_note": "Every value is null because the anchor has not been measured yet. It can only be measured once the environment images are tagged and their digests are recorded in skillshift-envs/DIGESTS.json, because the whole point of the anchor is to say 'your deployment is not the deployment these numbers came from'. A placeholder number would be indistinguishable from a measured one. `skillshift calibrate` reports this state and exits 2 rather than certifying anything.",
+  "status": "published",
   "agent": "reference",
   "agent_note": "The built-in no-skill ReAct agent (skillshift.agents.reference). It is a calibration anchor, not a competitive method, and it does not appear on the leaderboard.",
-  "model": null,
-  "harness_version": null,
-  "measured_at": null,
-  "env_digests": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "harness_version": "0.1.0",
+  "measured_at": "2026-08-26",
+  "env_digests": {
+    "gitlab-v12": "sha256:3f341b79b7aaecb012904caec50653ebb0387b26eabef608c5d63115267d86dc",
+    "gitlab-v16": "sha256:a94f658b1424e9e39ee26449f4c29c12cb4b27bc0c6ff57515563c428cb84d92",
+    "magento-v19": "sha256:3c169b1a2296f5f57f3a85bbcb682590900520dcba1e21df64ac4a32026daffc",
+    "magento-v24": "sha256:d0709482086f0e4931771795ae2b1e4b13fb9237c22328c8df0d074763465ad4",
+    "wordpress": "sha256:ac1e62d14aa7af284645566d923d78cfb024e1be35936f955282441596cd758f"
+  },
   "calibration_set": {
     "path": "data/calibration_set.json",
     "rule": "uniform-by-index-v1",
     "n_families": 30,
     "n_runs": 180
   },
-  "sigma_method": null,
-  "sigma_method_note": "How `sigma` is produced: the within-cell standard error of a single 30 x 6 reference run. SR uses the binomial standard error sqrt(p(1-p)/n); AS and ASC use the within-cell sample standard deviation divided by sqrt(n). This captures task-sampling noise, which dominates at n = 14 / 10 / 6, but not run-to-run variation of the language model; the reference run is therefore made at temperature 0. Recorded as null until the run happens, so that nothing here can be mistaken for a measurement.",
+  "sigma_method": "within-cell-standard-error-v1",
+  "sigma_method_note": "Within-cell standard error of a single 30 x 6 reference run. SR uses the binomial standard error sqrt(p(1-p)/n) in percentage points; AS and ASC use the within-cell sample standard deviation (ddof=1) divided by sqrt(n). This captures task-sampling noise, which dominates at n = 14 / 10 / 6, but not run-to-run variation of the language model; the reference run is therefore made at temperature 0.",
   "threshold_sigma": 3.0,
+  "max_steps": 10,
   "gated_metrics": [
     "SR",
     "AS"
@@ -26,17 +32,17 @@
     "gitlab": {
       "src": {
         "n": 14,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 14.285714285714286,
+          "sigma": 9.352195295828244
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 8.428571428571429,
+          "sigma": 0.8877325463129981
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -46,17 +52,17 @@
       },
       "src-perc": {
         "n": 14,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 14.285714285714286,
+          "sigma": 9.352195295828244
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 8.642857142857142,
+          "sigma": 0.8682883431106222
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -66,17 +72,17 @@
       },
       "src-exec": {
         "n": 14,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 14.285714285714286,
+          "sigma": 9.352195295828244
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 8.571428571428571,
+          "sigma": 0.8032508518054722
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -86,17 +92,17 @@
       },
       "tgt": {
         "n": 14,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 50.0,
+          "sigma": 13.36306209562122
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 7.357142857142857,
+          "sigma": 0.8745934242668422
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -106,17 +112,17 @@
       },
       "tgt-perc": {
         "n": 14,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 28.571428571428573,
+          "sigma": 12.07363221040738
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 7.071428571428571,
+          "sigma": 1.1215388060890177
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -126,17 +132,17 @@
       },
       "tgt-exec": {
         "n": 14,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 42.857142857142854,
+          "sigma": 13.226001425322162
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 6.785714285714286,
+          "sigma": 1.1102844474098184
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -148,17 +154,17 @@
     "magento": {
       "src": {
         "n": 10,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 30.0,
+          "sigma": 14.491376746189438
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 7.9,
+          "sigma": 1.1
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -168,17 +174,17 @@
       },
       "src-perc": {
         "n": 10,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 30.0,
+          "sigma": 14.491376746189438
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 7.9,
+          "sigma": 1.1396880664852505
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -188,17 +194,17 @@
       },
       "src-exec": {
         "n": 10,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 20.0,
+          "sigma": 12.64911064067352
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 8.7,
+          "sigma": 0.9433981132056602
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -208,17 +214,17 @@
       },
       "tgt": {
         "n": 10,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 50.0,
+          "sigma": 15.811388300841896
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 6.8,
+          "sigma": 1.0728984626287388
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -228,17 +234,17 @@
       },
       "tgt-perc": {
         "n": 10,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 60.0,
+          "sigma": 15.491933384829668
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 4.5,
+          "sigma": 1.0137937550497031
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -248,17 +254,17 @@
       },
       "tgt-exec": {
         "n": 10,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 60.0,
+          "sigma": 15.491933384829668
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 4.4,
+          "sigma": 1.2754084313139327
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -270,17 +276,17 @@
     "wordpress": {
       "src": {
         "n": 6,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 33.333333333333336,
+          "sigma": 19.245008972987527
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 4.833333333333333,
+          "sigma": 1.7400510848184252
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -290,17 +296,17 @@
       },
       "src-perc": {
         "n": 6,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 33.333333333333336,
+          "sigma": 19.245008972987527
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 5.166666666666667,
+          "sigma": 1.6210421887717106
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -310,17 +316,17 @@
       },
       "src-exec": {
         "n": 6,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 16.666666666666668,
+          "sigma": 15.214515486254616
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 6.833333333333333,
+          "sigma": 1.7207879332187077
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -330,17 +336,17 @@
       },
       "tgt": {
         "n": 6,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 33.333333333333336,
+          "sigma": 19.245008972987527
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 5.0,
+          "sigma": 1.6733200530681513
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -350,17 +356,17 @@
       },
       "tgt-perc": {
         "n": 6,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 33.333333333333336,
+          "sigma": 19.245008972987527
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 4.666666666666667,
+          "sigma": 1.7061978522759638
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {
@@ -370,17 +376,17 @@
       },
       "tgt-exec": {
         "n": 6,
-        "n_skill_calls": null,
+        "n_skill_calls": 0,
         "SR": {
-          "value": null,
-          "sigma": null
+          "value": 16.666666666666668,
+          "sigma": 15.214515486254616
         },
         "AS": {
-          "value": null,
-          "sigma": null
+          "value": 5.833333333333333,
+          "sigma": 1.8693433190413271
         },
         "ASC": {
-          "value": null,
+          "value": 0.0,
           "sigma": null
         },
         "SFR": {

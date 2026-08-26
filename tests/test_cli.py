@@ -167,8 +167,17 @@ class TestReport:
 
 
 class TestCalibrate:
-    def test_it_says_the_calibration_set_is_not_published_yet(self, capsys):
-        code, out = run(["calibrate"], capsys)
+    def test_it_refuses_an_unpublished_reference_anchor(self, tmp_path, capsys):
+        # The shipped anchor is a real 30 x 6 measurement since 2026-08-26
+        # (see test_cli_calibrate.py / test_calibration_reference.py), so this
+        # exercises the refusal itself against a throwaway pending payload
+        # rather than depending on the shipped file's status.
+        from tests.test_calibration_reference import anchor_payload
+
+        pending = tmp_path / "pending.json"
+        pending.write_text(json.dumps(anchor_payload(status="pending")))
+
+        code, out = run(["calibrate", "--reference", str(pending)], capsys)
         assert code == 2
         assert "calibration" in out.lower()
 

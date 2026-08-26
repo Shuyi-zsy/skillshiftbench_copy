@@ -60,14 +60,46 @@ def fake_records(sr_percent: float, avg_steps: float):
 
 
 class TestUnpublishedAnchor:
-    def test_the_shipped_anchor_is_still_pending_and_the_command_says_so(self, capsys):
-        code, out = run(["calibrate"], capsys)
+    """`--reference` can point at anyone's own not-yet-measured anchor.
+
+    The shipped anchor was this fixture until 2026-08-26 (30 x 6, real
+    measurement, see data/reference_results/reference-react.json); these tests
+    now build a throwaway pending one instead of relying on the shipped file's
+    status, since that file's whole job is to *stop* being pending.
+    """
+
+    def test_an_unpublished_anchor_refuses_with_exit_two(self, tmp_path, capsys):
+        pending = tmp_path / "pending.json"
+        pending.write_text(json.dumps(anchor_payload(status="pending")))
+        code, out = run(["calibrate", "--reference", str(pending)], capsys)
         assert code == 2
         assert "not been published" in out or "pending" in out.lower()
 
-    def test_it_does_not_claim_the_environment_is_fine(self, capsys):
-        _, out = run(["calibrate"], capsys)
+    def test_it_does_not_claim_the_environment_is_fine(self, tmp_path, capsys):
+        pending = tmp_path / "pending.json"
+        pending.write_text(json.dumps(anchor_payload(status="pending")))
+        _, out = run(["calibrate", "--reference", str(pending)], capsys)
         assert "matches the reference anchor" not in out
+
+
+class TestTheShippedAnchor:
+    """`data/reference_results/reference-react.json` is what `calibrate` uses
+    when `--reference` is not given -- it must actually be usable, not a
+    placeholder someone forgot to fill in."""
+
+    def test_is_published(self):
+        from skillshift.calibration import reference as reference_mod
+
+        anchor = reference_mod.load_reference_results(reference_mod.default_path())
+        assert anchor.is_published
+
+    def test_covers_the_full_thirty_by_six_sweep(self):
+        from skillshift.calibration import reference as reference_mod
+
+        anchor = reference_mod.load_reference_results(reference_mod.default_path())
+        cells = anchor.cells()
+        assert len(cells) == 18
+        assert sum(cell.n for cell in cells) == 180
 
     def test_a_missing_calibration_subset_is_reported(self, capsys, monkeypatch):
         from skillshift.calibration import subset as subset_mod
