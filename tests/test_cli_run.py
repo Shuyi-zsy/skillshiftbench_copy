@@ -124,3 +124,44 @@ class TestRunWorkers:
 
         assert code == 2
         assert called == []
+
+
+class TestSaveTrajectories:
+    def test_the_default_is_off(self, tmp_path, capsys, monkeypatch):
+        seen = {}
+
+        def spy(plans, **kwargs):
+            seen.update(kwargs)
+            return fake_records(plans, **kwargs)
+
+        monkeypatch.setattr(cli, "_run_pairs", spy)
+        code, _ = run(
+            [
+                "run", "--agent", "reference", "--site", "wordpress", "--condition", "src",
+                "--tasks", "skillshift.wordpress.0", "--out", str(tmp_path / "runs"),
+            ],
+            capsys,
+        )
+
+        assert code == 0
+        assert seen["trajectory_dir"] is None
+
+    def test_the_flag_points_at_out_dir_slash_trajectories(self, tmp_path, capsys, monkeypatch):
+        seen = {}
+
+        def spy(plans, **kwargs):
+            seen.update(kwargs)
+            return fake_records(plans, **kwargs)
+
+        monkeypatch.setattr(cli, "_run_pairs", spy)
+        out_dir = tmp_path / "runs"
+        code, _ = run(
+            [
+                "run", "--agent", "reference", "--site", "wordpress", "--condition", "src",
+                "--tasks", "skillshift.wordpress.0", "--save-trajectories", "--out", str(out_dir),
+            ],
+            capsys,
+        )
+
+        assert code == 0
+        assert seen["trajectory_dir"] == out_dir / "trajectories"

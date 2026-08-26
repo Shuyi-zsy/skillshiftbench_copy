@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..errors import SkillShiftError
+from ..eval.trajectory import TokenUsage
 from .base import Action, Observation, TaskSpec
 from .events import SkillRecorder
 
@@ -86,12 +87,19 @@ class _Turn:
     error: str
 
 
-def _default_completion(model: str, temperature: float) -> Callable[[Sequence[Mapping[str, Any]]], str]:
+def _default_completion(
+    model: str,
+    temperature: float,
+    *,
+    on_usage: Callable[[TokenUsage | None], None] | None = None,
+) -> Callable[[Sequence[Mapping[str, Any]]], str]:
     """Build an OpenAI-compatible chat completion callable.
 
     Reads the same environment variables as the rest of the harness
     (`my_api_key`, `my_base_url`, `my_model`), so a user configures the model in
-    one place.
+    one place. `on_usage`, when given, is called with the response's token
+    usage right after each real call -- a hand-supplied `completion` callable
+    has no such hook, since its contract is a bare string return.
     """
 
     def completion(messages: Sequence[Mapping[str, Any]]) -> str:
@@ -112,6 +120,17 @@ def _default_completion(model: str, temperature: float) -> Callable[[Sequence[Ma
             messages=list(messages),
             temperature=temperature,
         )
+        if on_usage is not None:
+            usage = getattr(response, "usage", None)
+            on_usage(
+                TokenUsage(
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                )
+                if usage is not None
+                else None
+            )
         return response.choices[0].message.content or ""
 
     return completion
@@ -131,10 +150,20 @@ class ReferenceReActAgent:
         self.model = model or os.getenv("my_model") or "gpt-5-mini-2025-08-07"
         self.temperature = temperature
         self.max_history = max(1, int(max_history))
-        self._completion = completion or _default_completion(self.model, temperature)
+        #: The last call's token usage, or `None` if the call did not report
+        #: one (a hand-supplied `completion` never does). Read by
+        #: `runner.run_task` -- see docs/results-policy.md for why this is
+        #: local-debugging-only and never part of a task's outcome.
+        self.last_usage: TokenUsage | None = None
+        self._completion = completion or _default_completion(
+            self.model, temperature, on_usage=self._set_last_usage
+        )
         self._task: TaskSpec | None = None
         self._recorder: SkillRecorder | None = None
         self._history: list[_Turn] = []
+
+    def _set_last_usage(self, usage: TokenUsage | None) -> None:
+        self.last_usage = usage
 
     @property
     def history(self) -> tuple[_Turn, ...]:

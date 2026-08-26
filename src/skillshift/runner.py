@@ -17,6 +17,7 @@ import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from . import conditions as conditions_mod
@@ -24,7 +25,9 @@ from . import registry as registry_mod
 from .agents.base import TaskSpec, check_agent, observation_from
 from .agents.events import SkillRecorder
 from .errors import SkillShiftError
+from .eval import llm_judge
 from .eval.records import TaskRecord
+from .eval.trajectory import StepTrace, TrajectoryWriter
 
 logger = logging.getLogger(__name__)
 
@@ -94,17 +97,25 @@ def run_task(
     agent: Any,
     env: Any,
     timeout: float | None = DEFAULT_TASK_TIMEOUT_SECONDS,
+    trajectory_dir: str | Path | None = None,
 ) -> TaskRecord:
     """Run one task to completion and return its record.
 
     A crash inside the agent or the environment ends that task, not the whole
     run: it is recorded as a failure with the error attached, and logged.  A
     355-task sweep must not be lost to one bad page.
+
+    `trajectory_dir`, when given, writes one local JSONL file per task under
+    it -- actions, observations, and token usage -- for debugging. It is
+    never part of `TaskRecord`/`per_task.jsonl` and never leaves the machine;
+    see docs/results-policy.md and `eval.trajectory`.
     """
     check_agent(agent)
 
     recorder = SkillRecorder()
     recorder.reset(task_uid=task.uid, condition=task.condition)
+    trajectory = TrajectoryWriter(Path(trajectory_dir) / f"{task.uid}.jsonl") if trajectory_dir else None
+    llm_judge.drain_usage()  # discard any residue from a previous task in this process
 
     steps = 0
     success = False
@@ -116,9 +127,29 @@ def run_task(
             agent.reset(task, recorder)
 
             while steps < task.max_steps:
-                action = agent.act(observation_from(raw_obs, step=steps, page=_page_of(env)))
+                obs = observation_from(raw_obs, step=steps, page=_page_of(env))
+                action = agent.act(obs)
+                agent_usage = getattr(agent, "last_usage", None)
                 raw_obs, reward, terminated, truncated, _ = env.step(action)
                 steps += 1
+
+                if trajectory is not None:
+                    trajectory.write(
+                        StepTrace(
+                            uid=task.uid,
+                            step=obs.step,
+                            url=obs.url,
+                            action=action,
+                            action_error=obs.last_action_error,
+                            reward=float(reward) if reward else 0.0,
+                            terminated=bool(terminated),
+                            truncated=bool(truncated),
+                            axtree=obs.axtree,
+                            html=obs.html,
+                            agent_usage=agent_usage,
+                            judge_usage=llm_judge.drain_usage(),
+                        )
+                    )
 
                 if reward and float(reward) > 0:
                     success = True
@@ -250,6 +281,7 @@ def _run_one_task_in_worker(
     max_steps: int,
     headless: bool,
     timeout: float | None,
+    trajectory_dir: str | None = None,
 ) -> TaskRecord:
     """`--workers>1` entry point: run exactly one task in a fresh subprocess.
 
@@ -268,7 +300,7 @@ def _run_one_task_in_worker(
     task = TaskSpec.from_task_ref(task_ref, condition=condition, max_steps=max_steps)
     agent = load_agent_factory(agent_spec)()
     env = make_browsergym_env(task.uid, headless=headless, max_steps=max_steps)
-    return run_task(task=task, agent=agent, env=env, timeout=timeout)
+    return run_task(task=task, agent=agent, env=env, timeout=timeout, trajectory_dir=trajectory_dir)
 
 
 def run_condition(
@@ -284,6 +316,7 @@ def run_condition(
     timeout: float | None = DEFAULT_TASK_TIMEOUT_SECONDS,
     workers: int = 1,
     agent_spec: str | None = None,
+    trajectory_dir: str | Path | None = None,
 ) -> tuple[TaskRecord, ...]:
     """Run every task of one site under one condition.
 
@@ -337,7 +370,13 @@ def run_condition(
             records: list[TaskRecord] = []
             for task in task_specs:
                 env = make_env(task.uid, headless=headless, max_steps=max_steps)
-                record = run_task(task=task, agent=agent_factory(), env=env, timeout=timeout)
+                record = run_task(
+                    task=task,
+                    agent=agent_factory(),
+                    env=env,
+                    timeout=timeout,
+                    trajectory_dir=trajectory_dir,
+                )
                 records.append(record)
                 if on_record is not None:
                     on_record(record)
@@ -356,6 +395,7 @@ def run_condition(
                     max_steps=max_steps,
                     headless=headless,
                     timeout=timeout,
+                    trajectory_dir=str(trajectory_dir) if trajectory_dir else None,
                 ): index
                 for index, task in enumerate(task_specs)
             }

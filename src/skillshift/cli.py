@@ -249,7 +249,15 @@ def _echo_record(record) -> None:
 
 
 def _run_pairs(
-    plans, *, factory, max_steps: int, headless: bool, timeout=None, workers: int = 1, agent_spec=None
+    plans,
+    *,
+    factory,
+    max_steps: int,
+    headless: bool,
+    timeout=None,
+    workers: int = 1,
+    agent_spec=None,
+    trajectory_dir=None,
 ) -> tuple:
     """Execute a list of `(site, condition, task_ids | None)` plans.
 
@@ -274,6 +282,7 @@ def _run_pairs(
                 on_record=_echo_record,
                 workers=workers,
                 agent_spec=agent_spec,
+                trajectory_dir=trajectory_dir,
             )
         )
     return tuple(records)
@@ -401,8 +410,9 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         return EXIT_USAGE
 
     from .agents import load_agent_factory
-    from .report import PRIVATE_FILE_NOTICE
+    from .report import PRIVATE_FILE_NOTICE, PRIVATE_TRAJECTORY_NOTICE, TRAJECTORY_DIRNAME
 
+    out_dir = Path(args.out)
     records = _run_pairs(
         plans,
         factory=load_agent_factory(args.agent),
@@ -411,9 +421,12 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         timeout=args.task_timeout,
         workers=args.workers,
         agent_spec=args.agent,
+        trajectory_dir=out_dir / TRAJECTORY_DIRNAME if args.save_trajectories else None,
     )
-    _write_records(records, Path(args.out))
+    _write_records(records, out_dir)
     print(PRIVATE_FILE_NOTICE)
+    if args.save_trajectories:
+        print(PRIVATE_TRAJECTORY_NOTICE)
 
     try:
         report = deviation_mod.compare(
@@ -451,6 +464,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.workers < 1:
         raise SkillShiftError(f"--workers must be at least 1, got {args.workers}.")
 
+    from .report import PRIVATE_TRAJECTORY_NOTICE, TRAJECTORY_DIRNAME
+
+    out_dir = Path(args.out)
     plans = [(site, condition, args.tasks or None) for site, condition in pairs]
     records = _run_pairs(
         plans,
@@ -460,10 +476,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         timeout=args.task_timeout,
         workers=args.workers,
         agent_spec=args.agent,
+        trajectory_dir=out_dir / TRAJECTORY_DIRNAME if args.save_trajectories else None,
     )
 
-    out_dir = Path(args.out)
     _write_records(records, out_dir)
+    if args.save_trajectories:
+        print(PRIVATE_TRAJECTORY_NOTICE)
     print(f"Next: skillshift report {out_dir} --out submission/ --name <method> --model <model>")
     return EXIT_OK
 
@@ -685,6 +703,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     calibrate.add_argument(
+        "--save-trajectories",
+        action="store_true",
+        dest="save_trajectories",
+        help=(
+            "write a local per-step trace (actions, observations, token usage) for "
+            "each task under <out>/trajectories/. Off by default; never published "
+            "and never part of the receipt -- see docs/results-policy.md."
+        ),
+    )
+    calibrate.add_argument(
         "--reference", default=None, help="path to a reference_results file (default: the shipped one)"
     )
     calibrate.add_argument(
@@ -733,6 +761,16 @@ def build_parser() -> argparse.ArgumentParser:
             "second environment does not fit in memory next to the first. "
             "Tasks in the same cell that hit the same GitLab/Magento instance "
             "concurrently are not guaranteed independent."
+        ),
+    )
+    run.add_argument(
+        "--save-trajectories",
+        action="store_true",
+        dest="save_trajectories",
+        help=(
+            "write a local per-step trace (actions, observations, token usage) for "
+            "each task under <out>/trajectories/. Off by default; never published "
+            "and never part of the receipt -- see docs/results-policy.md."
         ),
     )
     run.add_argument("--out", default="runs/latest")

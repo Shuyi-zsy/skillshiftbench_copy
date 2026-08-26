@@ -21,6 +21,8 @@ import threading
 import time
 from typing import Sequence
 
+from .trajectory import TokenUsage
+
 # --- Environment variable names (public API config) --------------------------
 API_KEY_ENV = "my_api_key"
 BASE_URL_ENV = "my_base_url"
@@ -37,6 +39,34 @@ _VERDICT_RE = re.compile(r"verdict\s*[:\-]?\s*(correct|incorrect)", re.IGNORECAS
 _client = None
 _model: str | None = None
 _client_lock = threading.Lock()
+
+# Token usage from every judged call since the last drain. A runner reads this
+# right after the `env.step()` that may have triggered judging, so it can
+# attach the spend to that step's trajectory entry -- see runner.run_task.
+_usage_log: list[TokenUsage] = []
+_usage_lock = threading.Lock()
+
+
+def _record_usage(response) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    with _usage_lock:
+        _usage_log.append(
+            TokenUsage(
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+            )
+        )
+
+
+def drain_usage() -> tuple[TokenUsage, ...]:
+    """Return and clear every judge call's usage recorded since the last drain."""
+    with _usage_lock:
+        drained = tuple(_usage_log)
+        _usage_log.clear()
+    return drained
 
 
 def _load_config() -> tuple[str, str, str]:
@@ -114,6 +144,7 @@ def _ask(system_prompt: str, user_prompt: str) -> float:
                 model=model,
                 messages=messages,
             )
+            _record_usage(response)
             content = response.choices[0].message.content or ""
             return _parse_verdict(content)
         except Exception as error:  # network / API errors -> retry

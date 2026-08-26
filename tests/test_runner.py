@@ -1,5 +1,6 @@
 """The generic run loop, exercised against a fake environment."""
 
+import json
 import os
 import signal
 import time
@@ -10,6 +11,7 @@ from skillshift import runner
 from skillshift.agents.base import TaskSpec
 from skillshift.errors import SkillShiftError
 from skillshift.eval.records import TaskRecord
+from skillshift.eval.trajectory import TokenUsage
 from skillshift.runner import run_task
 
 
@@ -151,6 +153,109 @@ class TestFailureHandling:
         with pytest.raises(SkillShiftError):
             run_task(task=spec(), agent=NotAnAgent(), env=env)
         assert env.actions == []
+
+
+class UsageReportingAgent(ScriptedAgent):
+    """A `ScriptedAgent` that also reports `last_usage`, like the reference agent."""
+
+    def __init__(self, usages=None, **kwargs):
+        super().__init__(**kwargs)
+        self._usages = list(usages or [])
+        self.last_usage = None
+
+    def act(self, obs):
+        self.last_usage = self._usages.pop(0) if self._usages else None
+        return super().act(obs)
+
+
+class TestTrajectoryRecording:
+    """`trajectory_dir` is opt-in and off by default -- docs/results-policy.md
+    forbids publishing per-task traces, not producing them locally."""
+
+    def test_no_file_is_written_when_trajectory_dir_is_not_given(self, tmp_path):
+        run_task(task=spec(), agent=ScriptedAgent(), env=FakeEnv(terminate_at=2))
+        assert list(tmp_path.iterdir()) == []
+
+    def test_writes_one_line_per_step(self, tmp_path):
+        run_task(
+            task=spec(),
+            agent=ScriptedAgent(),
+            env=FakeEnv(terminate_at=3),
+            trajectory_dir=tmp_path,
+        )
+        lines = (tmp_path / "skillshift.gitlab.v1.0.jsonl").read_text().splitlines()
+        assert len(lines) == 3
+
+    def test_each_line_carries_the_step_action_and_url(self, tmp_path):
+        run_task(
+            task=spec(),
+            agent=ScriptedAgent(),
+            env=FakeEnv(terminate_at=1),
+            trajectory_dir=tmp_path,
+        )
+        entry = json.loads((tmp_path / "skillshift.gitlab.v1.0.jsonl").read_text().splitlines()[0])
+        assert entry["step"] == 0
+        assert entry["action"] == 'click("1")'
+        assert entry["url"] == "u"
+        assert entry["terminated"] is True
+
+    def test_the_agents_own_token_usage_is_captured_per_step(self, tmp_path):
+        usages = [
+            TokenUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            TokenUsage(prompt_tokens=3, completion_tokens=3, total_tokens=6),
+        ]
+        run_task(
+            task=spec(),
+            agent=UsageReportingAgent(usages=usages),
+            env=FakeEnv(terminate_at=2),
+            trajectory_dir=tmp_path,
+        )
+        lines = (tmp_path / "skillshift.gitlab.v1.0.jsonl").read_text().splitlines()
+        first, second = (json.loads(line) for line in lines)
+        assert first["agent_usage"] == {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        assert second["agent_usage"] == {"prompt_tokens": 3, "completion_tokens": 3, "total_tokens": 6}
+
+    def test_an_agent_that_never_reports_usage_leaves_it_null(self, tmp_path):
+        run_task(
+            task=spec(), agent=ScriptedAgent(), env=FakeEnv(terminate_at=1), trajectory_dir=tmp_path
+        )
+        entry = json.loads((tmp_path / "skillshift.gitlab.v1.0.jsonl").read_text().splitlines()[0])
+        assert entry["agent_usage"] is None
+
+    def test_judge_usage_from_scoring_this_step_is_attached_and_then_cleared(
+        self, tmp_path, monkeypatch
+    ):
+        drains = [
+            (),  # run_task's own residue-clearing drain, at task start
+            (TokenUsage(prompt_tokens=5, completion_tokens=5, total_tokens=10),),
+            (),
+        ]
+        monkeypatch.setattr(runner.llm_judge, "drain_usage", lambda: drains.pop(0))
+
+        run_task(
+            task=spec(), agent=ScriptedAgent(), env=FakeEnv(terminate_at=2), trajectory_dir=tmp_path
+        )
+        lines = (tmp_path / "skillshift.gitlab.v1.0.jsonl").read_text().splitlines()
+        first, second = (json.loads(line) for line in lines)
+        assert first["judge_usage"] == [{"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}]
+        assert second["judge_usage"] == []
+
+    def test_steps_already_written_survive_a_later_crash(self, tmp_path):
+        class Exploding(ScriptedAgent):
+            def act(self, obs):
+                if self.steps >= 2:
+                    raise RuntimeError("boom")
+                return super().act(obs)
+
+        record = run_task(
+            task=spec(),
+            agent=Exploding(),
+            env=FakeEnv(terminate_at=99),
+            trajectory_dir=tmp_path,
+        )
+        assert record.error is not None
+        lines = (tmp_path / "skillshift.gitlab.v1.0.jsonl").read_text().splitlines()
+        assert len(lines) == 2
 
 
 class TestWebArenaEnvironmentVariables:
@@ -388,7 +493,7 @@ class TestRunConditionWorkers:
             )
 
     def test_each_worker_gets_the_right_task_and_the_pool_is_sized_to_workers(self, monkeypatch):
-        def worker(*, agent_spec, site, condition, task_uid, max_steps, headless, timeout):
+        def worker(*, agent_spec, site, condition, task_uid, max_steps, headless, timeout, trajectory_dir=None):
             return TaskRecord(
                 uid=task_uid, site=site, condition=condition, success=True,
                 steps=1, skill_calls=0, skill_failures=0,

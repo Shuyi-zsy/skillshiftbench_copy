@@ -308,3 +308,41 @@ class TestWorkers:
         assert code == 2
         assert "workers" in out
         assert called == []
+
+
+class TestSaveTrajectories:
+    def test_the_default_is_off(self, tmp_path, capsys, monkeypatch):
+        seen = {}
+
+        def spy(plans, **kwargs):
+            seen.update(kwargs)
+            return fake_records(sr_percent=20.0, avg_steps=8.0)(plans, **kwargs)
+
+        monkeypatch.setattr(cli, "_run_pairs", spy)
+        run(
+            ["calibrate", "--reference", str(published_anchor(tmp_path)), "--out", str(tmp_path / "runs")],
+            capsys,
+        )
+
+        assert seen["trajectory_dir"] is None
+
+    def test_the_flag_points_at_out_dir_slash_trajectories(self, tmp_path, capsys, monkeypatch):
+        seen = {}
+
+        def spy(plans, **kwargs):
+            seen.update(kwargs)
+            return fake_records(sr_percent=20.0, avg_steps=8.0)(plans, **kwargs)
+
+        monkeypatch.setattr(cli, "_run_pairs", spy)
+        out_dir = tmp_path / "runs"
+        run(
+            [
+                "calibrate",
+                "--reference", str(published_anchor(tmp_path)),
+                "--save-trajectories",
+                "--out", str(out_dir),
+            ],
+            capsys,
+        )
+
+        assert seen["trajectory_dir"] == out_dir / "trajectories"

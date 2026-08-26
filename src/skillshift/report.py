@@ -34,6 +34,16 @@ PRIVATE_FILE_NOTICE = (
     f"keep the file if you may need to answer a dispute later."
 )
 
+TRAJECTORY_DIRNAME = "trajectories"
+
+PRIVATE_TRAJECTORY_NOTICE = (
+    f"{TRAJECTORY_DIRNAME}/ holds this run's per-step traces (actions, "
+    f"observations, token usage) for local debugging. Same rule as "
+    f"{PER_TASK_FILENAME}: do not commit it, do not attach it anywhere public. "
+    f"It is covered by the repository's .gitignore and is not part of the "
+    f"receipt."
+)
+
 NO_SKILL_CALL_REASON = (
     "No learned skill was invoked in this run, so the skill failure rate has no "
     "denominator. Reported as null rather than 0, which would claim that no skill "
