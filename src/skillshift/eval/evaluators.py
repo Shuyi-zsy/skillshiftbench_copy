@@ -15,7 +15,24 @@ from playwright.sync_api import CDPSession, Page
 
 from webarena.browser_env.actions import Action
 from webarena.browser_env.utils import StateInfo
-from webarena.evaluation_harness.helper_functions import PseudoPage
+# `HTMLContentEvaluator` resolves a `func:name(...)` locator with a bare
+# `eval()`, which looks the name up in *this module's* globals.  Importing only
+# PseudoPage meant every task whose evaluation calls a helper died with
+# NameError -- 24 of the shipped tasks call gitlab_get_project_memeber_role
+# (upstream's typo, kept verbatim because the task files reference it).
+#
+# This is the same import WebArena's own evaluators.py makes, so a `func:`
+# locator resolves here exactly as it does upstream.
+from webarena.evaluation_harness.helper_functions import (  # noqa: F401 - resolved by eval()
+    PseudoPage,
+    gitlab_get_project_memeber_role,
+    llm_fuzzy_match,
+    llm_ua_match,
+    reddit_get_post_url,
+    shopping_get_latest_order_url,
+    shopping_get_sku_latest_review_author,
+    shopping_get_sku_latest_review_rating,
+)
 
 from .llm_judge import judge, judge_unachievable
 
