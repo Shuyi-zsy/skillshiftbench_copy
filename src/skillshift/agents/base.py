@@ -142,6 +142,43 @@ def _as_index(value: Any, default: int = 0) -> int:
         return default
 
 
+def _flatten_axtree(raw: Mapping[str, Any]) -> str:
+    """Render browsergym's raw `axtree_object` the way `mpcr/agent.py` does.
+
+    browsergym's own observation never carries a flattened `axtree_txt` --
+    only the structured `axtree_object`. Every agent that consumes it has to
+    flatten it itself; skip this and `Observation.axtree` is silently always
+    empty, which is indistinguishable from "the page has no content" to an
+    agent that never sees a page.
+    """
+    text = raw.get("axtree_txt")
+    if text:
+        return str(text)
+
+    axtree_object = raw.get("axtree_object")
+    if not axtree_object:
+        return ""
+
+    from browsergym.utils.obs import flatten_axtree_to_str
+
+    return flatten_axtree_to_str(axtree_object)
+
+
+def _flatten_html(raw: Mapping[str, Any]) -> str:
+    """Render browsergym's raw `dom_object` the way `mpcr/agent.py` does."""
+    text = raw.get("pruned_html")
+    if text:
+        return str(text)
+
+    dom_object = raw.get("dom_object")
+    if not dom_object:
+        return ""
+
+    from browsergym.utils.obs import flatten_dom_to_str, prune_html
+
+    return prune_html(flatten_dom_to_str(dom_object))
+
+
 def observation_from(raw: Mapping[str, Any], *, step: int, page: Any = None) -> Observation:
     """Translate a browsergym observation dict into an `Observation`.
 
@@ -156,8 +193,8 @@ def observation_from(raw: Mapping[str, Any], *, step: int, page: Any = None) -> 
         step=int(step),
         goal=_goal_text(raw),
         url=url,
-        axtree=str(raw.get("axtree_txt") or ""),
-        html=str(raw.get("pruned_html") or ""),
+        axtree=_flatten_axtree(raw),
+        html=_flatten_html(raw),
         screenshot=raw.get("screenshot"),
         last_action=str(raw.get("last_action") or ""),
         last_action_error=str(raw.get("last_action_error") or ""),
