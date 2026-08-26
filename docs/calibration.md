@@ -27,10 +27,9 @@ sites themselves answered in under 100ms. A task that hits the ceiling is
 recorded as an error rather than as a failure, because it is the absence of a
 measurement, not a measurement of failure.
 
-> **Status: the anchor is not published yet.** The numbers can only be measured
-> against the environment images that ship, and those are not tagged yet. Until
-> then `skillshift calibrate` says so and exits 2. It never reports a pass it
-> did not earn. See [`../data/reference_results/README.md`](../data/reference_results/README.md).
+> **Status: published.** Measured 2026-08-26 against `gpt-5-mini-2025-08-07` —
+> 180 real runs, 58 successes (32.2% SR overall), zero crashed tasks. See
+> [`../data/reference_results/README.md`](../data/reference_results/README.md).
 
 ## Exit codes
 
@@ -142,6 +141,8 @@ to go and look at.
 | `--threshold N` | override the anchor's own sigma threshold |
 | `--agent` | anchor agent, default `reference` |
 | `--out` | where `per_task.jsonl` goes, default `runs/calibration` |
+| `--workers N` | run N tasks at once within each (site, condition) cell, default 1 (serial) |
+| `--save-trajectories` | write a local per-step trace (actions, observations, token usage) per task under `<out>/trajectories/`; off by default |
 
 The per-task records a calibration run produces are per-task judgements like any
 other, and are covered by the same rule: they stay on your machine. See
