@@ -21,6 +21,8 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+import ast
+import json
 
 from ..errors import SkillShiftError
 from ..eval.trajectory import TokenUsage
@@ -55,29 +57,226 @@ Rules:
 - When you have the answer the task asks for, send it with send_msg_to_user(...).
 """
 
-_FENCE_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+# SYSTEM_PROMPT = """You are a web agent operating a browser through a fixed action space.
+
+# Available actions:
+# {actions}
+
+# Rules:
+# - Choose exactly ONE browser action per response.
+# - Give a short reason, followed by one fenced code block.
+# - Use ```python for the code block.
+# - The code block must contain exactly one valid Python function call.
+# - Always quote string arguments with single or double quotes.
+# - For URLs, write goto("https://example.com/path"), never goto(https://example.com/path).
+# - Use only the available browser actions.
+# - Use element IDs from the current accessibility tree.
+# - Do not invent element IDs.
+# - Do not output multiple actions or explanatory comments inside the code block.
+# - When the task asks for an answer, use send_msg_to_user(...).
+# """
+
+
+
+_FENCE_RE = re.compile(r"```(.*?)```", re.DOTALL)
+_LANGUAGE_RE = re.compile(
+    r"^(?:python|py|action|browsergym|json)(?:\s+|$)",
+    re.IGNORECASE,
+)
+_BARE_URL_RE = re.compile(
+    r"^goto\(\s*(https?://[^\s'\"()]+)\s*\)$"
+)
+
+_ALLOWED_ACTIONS = {
+    "click",
+    "fill",
+    "hover",
+    "select_option",
+    "keyboard_press",
+    "scroll",
+    "goto",
+    "go_back",
+    "go_forward",
+    "new_tab",
+    "tab_focus",
+    "tab_close",
+    "send_msg_to_user",
+    "report_infeasible",
+}
+
+
+def _normalize_action(candidate: str) -> str:
+    """Normalize and validate one BrowserGym action."""
+    candidate = candidate.strip().rstrip(";").strip()
+
+    # Repair only an unquoted HTTP(S) URL in goto(...).
+    match = _BARE_URL_RE.fullmatch(candidate)
+    if match:
+        candidate = f"goto({match.group(1)!r})"
+
+    try:
+        tree = ast.parse(candidate, mode="exec")
+    except SyntaxError as exc:
+        raise SkillShiftError(
+            f"Invalid action syntax: {candidate!r}"
+        ) from exc
+
+    # Exactly one top-level function call is allowed.
+    if len(tree.body) != 1:
+        raise SkillShiftError("Expected exactly one action")
+
+    statement = tree.body[0]
+    if not isinstance(statement, ast.Expr):
+        raise SkillShiftError("Expected a function call")
+
+    call = statement.value
+    if not isinstance(call, ast.Call):
+        raise SkillShiftError("Expected a function call")
+
+    if not isinstance(call.func, ast.Name):
+        raise SkillShiftError("Unsupported action expression")
+
+    if call.func.id not in _ALLOWED_ACTIONS:
+        raise SkillShiftError(
+            f"Unknown browser action: {call.func.id}"
+        )
+
+    # Reject nested function calls, attribute access,
+    # assignments and other executable expressions.
+    for argument in [*call.args, *(kw.value for kw in call.keywords)]:
+        for node in ast.walk(argument):
+            if isinstance(
+                node,
+                (
+                    ast.Call,
+                    ast.Attribute,
+                    ast.Lambda,
+                    ast.NamedExpr,
+                    ast.Await,
+                    ast.Yield,
+                    ast.YieldFrom,
+                    ast.ListComp,
+                    ast.SetComp,
+                    ast.DictComp,
+                    ast.GeneratorExp,
+                ),
+            ):
+                raise SkillShiftError(
+                    "Complex expressions are not valid action arguments"
+                )
+
+    # Return a valid Python action, never execute it here.
+    return candidate
+
+
+def _json_to_action(text: str) -> str:
+    """Convert a JSON action object to a BrowserGym action."""
+
+    data = json.loads(text)
+
+    if not isinstance(data, dict):
+        raise SkillShiftError("JSON action must be an object")
+
+    name = data.get("action")
+
+    if not isinstance(name, str):
+        raise SkillShiftError("JSON action name must be a string")
+
+    # Start with the actions relevant to the current failure.
+    if name == "click":
+        bid = data.get("bid")
+        if not isinstance(bid, (str, int)):
+            raise SkillShiftError("click requires a bid")
+        return f"click({str(bid)!r})"
+
+    if name == "goto":
+        url = data.get("url")
+        if not isinstance(url, str):
+            raise SkillShiftError("goto requires a URL")
+        if not url.startswith(("http://", "https://")):
+            raise SkillShiftError("goto requires an HTTP(S) URL")
+        return f"goto({url!r})"
+
+    if name == "fill":
+        bid = data.get("bid")
+        value = data.get("value")
+        if not isinstance(bid, (str, int)):
+            raise SkillShiftError("fill requires a bid")
+        if not isinstance(value, str):
+            raise SkillShiftError("fill requires a string value")
+        return f"fill({str(bid)!r}, {value!r})"
+
+    if name == "scroll":
+        dx = data.get("dx")
+        dy = data.get("dy")
+        if not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for v in (dx, dy)
+        ):
+            raise SkillShiftError("scroll requires numeric dx and dy")
+        return f"scroll({dx!r}, {dy!r})"
+
+    raise SkillShiftError(f"Unsupported JSON action: {name!r}")
+
+
+def _parse_candidate(candidate: str) -> str:
+    candidate = candidate.strip()
+
+    if candidate.startswith("{"):
+        try:
+            converted = _json_to_action(candidate)
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise SkillShiftError(
+                f"Invalid JSON action: {exc}"
+            ) from exc
+        return _normalize_action(converted)
+
+    return _normalize_action(candidate)
+
 
 
 def extract_action(text: str) -> Action:
-    """Pull the action out of a model reply.
+    """Extract one valid action from a model response."""
+    if not text or not text.strip():
+        raise SkillShiftError("The model returned an empty reply")
 
-    Prefers a fenced code block; otherwise takes the last non-empty line.  An
-    empty reply raises rather than sending a blank action, which the environment
-    would report as an opaque execution error.
-    """
-    match = _FENCE_RE.search(text or "")
-    if match:
-        action = match.group(1).strip()
-        if action:
-            return action
+    candidates = []
 
-    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    if not lines:
-        raise SkillShiftError(
-            "The model returned no action. Expected an action in a fenced code block, "
-            "e.g. ```\\nclick(\"42\")\\n```"
-        )
-    return lines[-1]
+    # Prefer fenced code blocks.
+    for match in _FENCE_RE.finditer(text):
+        body = match.group(1).strip()
+
+        # Strip optional language marker:
+        # ```python, ```action, ```browsergym, etc.
+        body = _LANGUAGE_RE.sub("", body, count=1).strip()
+
+        if body:
+            candidates.append(body)
+
+    # Fallback for models that omit code fences.
+    if not candidates:
+        for line in reversed(text.splitlines()):
+            line = line.strip()
+            if re.match(
+                r"^[a-zA-Z_]\w*\s*\(",
+                line,
+            ):
+                candidates.append(line)
+
+    errors = []
+    for candidate in candidates:
+        try:
+            return _parse_candidate(candidate)
+        except SkillShiftError as exc:
+            errors.append(str(exc))
+
+    raise SkillShiftError(
+    "No valid browser action found in model response.\n"
+    f"Candidate count: {len(candidates)}\n"
+    f"Errors: {errors[:3]!r}\n"
+    f"Candidate previews: {[c[:200] for c in candidates[:3]]!r}"
+)
+
 
 
 @dataclass(frozen=True)
@@ -185,6 +384,10 @@ class ReferenceReActAgent:
             )
 
         reply = self._completion(self._build_messages(obs))
+        print("\n========== RAW MODEL REPLY ==========")
+        print(repr(reply))
+        print("=====================================\n")
+
         action = extract_action(reply)
 
         self._history.append(_Turn(step=obs.step, action=action, error=obs.last_action_error))
